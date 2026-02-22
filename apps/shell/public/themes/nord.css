@@ -1,0 +1,29 @@
+[data-theme="nord"] {
+  --rx-background: 36 41 52;
+  --rx-foreground: 236 239 244;
+  --rx-surface: 46 52 64;
+  --rx-surface-2: 59 66 82;
+  --rx-border: 67 76 94;
+  --rx-border-strong: 94 129 172;
+  --rx-control: 59 66 82;
+  --rx-control-hover: 76 86 106;
+  --rx-primary: 94 129 172;
+  --rx-primary-strong: 136 192 208;
+  --rx-accent: 163 190 140;
+  --rx-palette-1: 136 192 208;
+  --rx-palette-2: 180 142 173;
+  --rx-palette-3: 94 129 172;
+  --rx-palette-4: 163 190 140;
+  --rx-palette-5: 235 203 139;
+  --rx-success: 163 190 140;
+  --rx-warning: 235 203 139;
+  --rx-danger: 191 97 106;
+  --rx-muted: 216 222 233;
+  --rx-action: var(--rx-palette-1);
+  --rx-action-strong: var(--rx-palette-2);
+  --rx-navigate: var(--rx-palette-3);
+  --rx-navigate-strong: var(--rx-palette-1);
+  --rx-confirm: var(--rx-palette-4);
+  --rx-confirm-strong: var(--rx-palette-5);
+  --rx-tag: var(--rx-palette-2);
+}

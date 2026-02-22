@@ -1,0 +1,9 @@
+FROM node:20-alpine
+WORKDIR /runner
+ENV NODE_ENV=production
+
+COPY apps/runner/package.json ./package.json
+COPY apps/runner/src ./src
+
+EXPOSE 5099
+CMD ["node", "src/server.js"]

@@ -1,0 +1,14 @@
+{
+  "name": "rainbowexplorer",
+  "private": true,
+  "packageManager": "pnpm@9.12.2",
+  "scripts": {
+    "dev:shell": "pnpm --dir apps/shell dev",
+    "dev:runner": "pnpm --dir apps/runner dev",
+    "dev:all": "node scripts/dev-all.mjs",
+    "install:all": "pnpm install"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

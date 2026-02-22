@@ -1,0 +1,9 @@
+{
+  "name": "@rainbow/runner",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js"
+  }
+}

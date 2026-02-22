@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  shell:
+    image: ghcr.io/OpenForgeLabs/RainbowExplorer-shell:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_PLUGIN_RUNNER_URL=http://runner:5099
+    depends_on:
+      - runner
+
+  runner:
+    image: ghcr.io/OpenForgeLabs/RainbowExplorer-runner:latest
+    ports:
+      - "5099:5099"
+    environment:
+      - RUNNER_PORT_START=4100
+      - RUNNER_PORT_END=4999
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - rainbow-data:/root/.rainbow
+
+  plugin-redis:
+    image: ghcr.io/OpenForgeLabs/rainbow-redis:latest
+    profiles: ["plugins"]
+    ports:
+      - "4011:4011"
+
+volumes:
+  rainbow-data:

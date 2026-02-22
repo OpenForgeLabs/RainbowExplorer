@@ -1,0 +1,29 @@
+@import "@openforgelabs/rainbow-ui/styles/theme.css";
+@import "tailwindcss";
+@source "../../node_modules/@openforgelabs/rainbow-ui/src/**/*.{ts,tsx}";
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: rgb(var(--rx-background));
+  color: rgb(var(--rx-foreground));
+}
+
+button,
+[role="button"],
+[type="button"],
+[type="submit"],
+[type="reset"] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+[type="button"]:disabled,
+[type="submit"]:disabled,
+[type="reset"]:disabled {
+  cursor: not-allowed;
+}
