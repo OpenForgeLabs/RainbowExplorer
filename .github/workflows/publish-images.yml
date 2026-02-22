@@ -43,6 +43,8 @@ jobs:
           file: docker/Dockerfile.shell
           push: true
           platforms: linux/amd64,linux/arm64
+          secrets: |
+            gh_packages_token=${{ secrets.GH_PACKAGES_TOKEN }}
           tags: |
             ghcr.io/${{ github.repository }}-shell:latest
             ghcr.io/${{ github.repository }}-shell:${{ steps.meta.outputs.tag }}

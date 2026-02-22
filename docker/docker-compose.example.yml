@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   shell:
-    image: ghcr.io/OpenForgeLabs/RainbowExplorer-shell:latest
+    image: ghcr.io/openforgelabs/rainbowexplorer-shell:latest
     ports:
       - "3000:3000"
     environment:
@@ -11,7 +11,7 @@ services:
       - runner
 
   runner:
-    image: ghcr.io/OpenForgeLabs/RainbowExplorer-runner:latest
+    image: ghcr.io/openforgelabs/rainbowexplorer-runner:latest
     ports:
       - "5099:5099"
     environment:
@@ -22,7 +22,7 @@ services:
       - rainbow-data:/root/.rainbow
 
   plugin-redis:
-    image: ghcr.io/OpenForgeLabs/rainbow-redis:latest
+    image: ghcr.io/openforgelabs/rainbow-redis:latest
     profiles: ["plugins"]
     ports:
       - "4011:4011"
