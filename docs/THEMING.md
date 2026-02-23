@@ -1,131 +1,64 @@
-# Rainbow Design System v1 — Theming
+# Theme Registry Guide
 
-This document defines the token contract and rules for Rainbow Explorer.
-All apps and plugins must consume tokens from `@openforgelabs/rainbow-ui`.
+RainbowExplorer uses a **theme registry** model. Themes are not hardcoded in code at runtime.
 
-## Token Contract
+## Where themes are stored
 
-All tokens are CSS variables with the `--rx-` prefix and must be defined per theme.
+### Built-in fallback
+- `apps/shell/public/theme-registry.json`
 
-### Colors (rgb triplets)
+### User-local registry (preferred)
+- `~/.rainbow/theme-registry.json`
 
-Values are stored as `r g b` and consumed via:
+The shell reads local registry first and falls back to built-ins when needed.
 
+## How to create a new theme
+
+1. Open the **Themes** page in the shell.
+2. Click **Create theme**.
+3. Edit metadata (`id`, `label`, `description`, `basedOn`).
+4. Edit token values visually (or switch to JSON mode).
+5. Save.
+
+## Import and export
+
+From the Themes page you can:
+- Export current registry as `rainbow-theme-registry.json`.
+- Import a shared registry JSON.
+- Merge imported themes by `id`.
+
+This makes community theme sharing easy.
+
+## Token format
+
+All color tokens use RGB triplets:
+
+```txt
+"--rx-color-primary": "96 181 255"
 ```
-rgb(var(--rx-color-*) / <alpha-value>)
-```
 
-**Surfaces**
-- `--rx-color-bg`
-- `--rx-color-surface`
-- `--rx-color-surface-2`
-- `--rx-color-surface-3`
-- `--rx-color-overlay`
-- `--rx-color-elevated`
+Do not use hex in the registry file.
 
-**Text**
-- `--rx-color-text`
-- `--rx-color-text-muted`
-- `--rx-color-text-subtle`
-- `--rx-color-text-inverse`
-- `--rx-color-text-on-primary`
-- `--rx-color-text-on-accent`
-- `--rx-color-text-on-danger`
-- `--rx-color-text-on-success`
-- `--rx-color-text-on-warning`
+## Required token families
 
-**Structure**
-- `--rx-color-border`
-- `--rx-color-border-subtle`
-- `--rx-color-border-strong`
-- `--rx-color-divider`
-- `--rx-color-ring`
-- `--rx-color-focus`
+- Surfaces
+- Text
+- Structure
+- Interactive
+- Status
+- Visualization
 
-**Interactive**
-- `--rx-color-primary`
-- `--rx-color-primary-hover`
-- `--rx-color-primary-active`
-- `--rx-color-accent`
-- `--rx-color-accent-hover`
-- `--rx-color-accent-active`
-- `--rx-color-control`
-- `--rx-color-control-hover`
-- `--rx-color-control-active`
+See `apps/shell/src/lib/themeRegistry.ts` for canonical token keys.
 
-**Status**
-- `--rx-color-success`
-- `--rx-color-success-hover`
-- `--rx-color-warning`
-- `--rx-color-warning-hover`
-- `--rx-color-danger`
-- `--rx-color-danger-hover`
-- `--rx-color-info`
+## Reset behavior
 
-**Data Visualization**
-- `--rx-color-viz-1` … `--rx-color-viz-8`
-- `--rx-color-viz-positive`
-- `--rx-color-viz-negative`
-- `--rx-color-viz-neutral`
+- **Reset registry** restores built-in themes.
+- Built-in themes are marked and cannot be removed directly.
 
-### Radius
-- `--rx-radius-none`
-- `--rx-radius-sm`
-- `--rx-radius-md`
-- `--rx-radius-lg`
-- `--rx-radius-xl`
-- `--rx-radius-full`
+## Plugin theming
 
-### Shadow
-- `--rx-shadow-xs`
-- `--rx-shadow-sm`
-- `--rx-shadow-md`
-- `--rx-shadow-lg`
-- `--rx-shadow-xl`
+Hosted plugins receive theme via:
+- query string `?theme=<id>`
+- `postMessage({ type: "theme", value })`
 
-### Motion
-- `--rx-motion-fast`
-- `--rx-motion-normal`
-- `--rx-motion-slow`
-- `--rx-ease-standard`
-- `--rx-ease-emphasized`
-
-### Z-Index
-- `--rx-z-dropdown`
-- `--rx-z-modal`
-- `--rx-z-toast`
-- `--rx-z-tooltip`
-
-## How to Add a Theme
-
-1. Edit `@openforgelabs/rainbow-ui/styles/themes.css`.
-2. Add a new `[data-theme="your-theme-name"]` block.
-3. Define **all** tokens above (no inheritance or missing values).
-4. Run:
-   - `pnpm validate:themes` (in `rainbow-packages`)
-
-## Rules (No Hardcodes)
-
-Do not use:
-- Tailwind color names (`text-slate-*`, `bg-blue-*`, etc.)
-- Hex colors in className strings
-- Hardcoded rgba shadows
-
-Use semantic classes from the tailwind preset and CSS variables only.
-
-## Visualization Token Policy
-
-Use `viz-1..8` for categorical data.
-Use `viz-positive / viz-negative / viz-neutral` for directional or KPI values.
-Do **not** map visualization tokens to status colors.
-
-## Accessibility Requirements
-
-Minimum contrast ratios enforced by validator:
-- `text` on `bg`
-- `text-on-primary` on `primary`
-- `text-on-danger` on `danger`
-- `text-on-success` on `success`
-- `text-on-warning` on `warning`
-
-Target ratio: **4.5:1** or higher.
+Plugins should apply this value by setting `data-theme` on `document.documentElement`.

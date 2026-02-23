@@ -1,26 +1,48 @@
 # RainbowExplorer
 
-[![Shell](https://img.shields.io/badge/App-Shell-22c55e)](./apps/shell)
-[![Plugins](https://img.shields.io/badge/Architecture-Plugin%20Host-0ea5e9)](#)
+[![Infrastructure Explorer](https://img.shields.io/badge/Product-Infrastructure%20Explorer-22c55e)](./apps/shell)
+[![Plugin Architecture](https://img.shields.io/badge/Architecture-Plugin%20Based-0ea5e9)](#)
+[![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-f59e0b)](#)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/JuanTellezRojas)
 
-RainbowExplorer is the host shell for the Rainbow plugin ecosystem.
+RainbowExplorer is a **plugin-based infrastructure explorer** for teams that need a modern, extensible way to manage cloud and platform resources.
 
-It lets you load infrastructure plugins in iframes with shared theming and contracts, so each plugin can evolve independently while preserving a cohesive UX.
+It is the host shell of the Rainbow ecosystem: one product UI, multiple specialized plugins, shared theming, and consistent UX.
 
-## Core ideas
-- Shell-first architecture with pluggable views.
-- Shared design system and contracts from `rainbow-packages`.
-- Local-first workflows for developers and operators.
+## What this software is
+RainbowExplorer is designed as a:
+- self-hosted infrastructure operations workspace,
+- plugin runtime for internal/dev tools,
+- extensible alternative to single-purpose admin UIs.
+
+## Why teams use it
+- **Plugin-first**: add or remove capabilities without rewriting the shell.
+- **Consistent UX**: shared design system and contracts from RainbowPackages.
+- **Local-first and portable**: optimized for developer workflows.
+- **Scalable architecture**: shell + plugin model keeps each module decoupled.
+
+## Available plugins
+
+| Plugin | Status | Repository | Notes |
+|---|---|---|---|
+| **Redis** | ![Stable](https://img.shields.io/badge/Status-Stable-22c55e) | [OpenForgeLabs/RainbowRedis](https://github.com/OpenForgeLabs/RainbowRedis) | DB navigation, key browser, type-specific editors |
+| **Service Bus** | ![Under Construction](https://img.shields.io/badge/Status-Under%20Construction-f59e0b) | _TBD_ | Planned module, currently in progress |
 
 ## Repository map
 - `apps/shell`: main host application.
 - `apps/runner`: local plugin runner.
-- `plugin-registry.json`: plugin discovery source.
+- `plugin-registry.json`: local plugin discovery source.
 
-Related repos:
-- `rainbow-packages`: UI/Contracts/Connections packages.
-- `rainbow-redis`: Redis plugin implementation.
+Related repositories:
+- [`OpenForgeLabs/RainbowPackages`](https://github.com/OpenForgeLabs/RainbowPackages): shared UI, contracts, and connections packages.
+- [`OpenForgeLabs/RainbowRedis`](https://github.com/OpenForgeLabs/RainbowRedis): Redis plugin implementation.
+
+
+## Guides
+- [Plugin image sources and installation](./docs/PLUGIN_IMAGES.md)
+- [How to build a new plugin (template)](./docs/PLUGIN_TEMPLATE.md)
+- [Plugin starter project (copy/paste base)](./templates/plugin-starter-next)
+- [Theme registry and custom themes](./docs/THEMING.md)
 
 ## Development
 ```bash
@@ -28,24 +50,24 @@ pnpm install
 pnpm dev:shell
 ```
 
-Run shell + runner:
+Run shell + runner together:
 ```bash
 pnpm dev:all
 ```
 
 ## Plugin registry
 By default, the shell reads local `plugin-registry.json`.
-You can override with:
+
+You can override with a remote registry:
 
 ```bash
 PLUGIN_REGISTRY_URL=https://example.com/registry.json
 ```
 
 ## Licensing
-This project is **source-available** under the PolyForm Noncommercial 1.0.0 license.
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
-Commercial usage is not allowed without a separate commercial agreement.
-See `LICENSE` for details.
+See the full license text in `LICENSE`.
 
 ## Support
 If RainbowExplorer helps your team, consider supporting development:
