@@ -173,7 +173,7 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
   };
 
   return (
-    <Card className="bg-surface">
+    <Card>
       <div className="flex flex-col gap-6">
         <div>
           <h2 className="text-lg font-semibold text-foreground">
@@ -261,7 +261,7 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
               {catalog.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-xl border border-border bg-surface-2 p-4"
+                  className="rounded-xl border border-border-strong/60 bg-surface-2 p-4"
                 >
                   <div className="text-sm font-semibold text-foreground">
                     {item.name}
@@ -283,7 +283,8 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
                   </div>
                   <Button
                     className="mt-4"
-                    variant={installedIds.has(item.id) ? "secondary" : "primary"}
+                    variant={installedIds.has(item.id) ? "outline" : "solid"}
+                    tone={installedIds.has(item.id) ? "neutral" : "primary"}
                     onClick={() => handleInstall(item)}
                     disabled={busyId === item.id}
                   >
@@ -303,7 +304,7 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
             {plugins.map((plugin) => (
               <div
                 key={plugin.id}
-                className="rounded-xl border border-border bg-surface-2 p-4"
+                className="rounded-xl border border-border-strong/60 bg-surface-2 p-4"
               >
                 <div className="text-sm font-semibold text-foreground">
                   {plugin.name}

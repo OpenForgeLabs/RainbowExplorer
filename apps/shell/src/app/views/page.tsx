@@ -52,10 +52,10 @@ export default async function ViewsPage() {
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold text-slate-100">
+        <h1 className="text-2xl font-semibold text-foreground">
           Plugin Views
         </h1>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-subtle">
           Accesos directos a vistas publicadas por cada plugin.
         </p>
       </header>

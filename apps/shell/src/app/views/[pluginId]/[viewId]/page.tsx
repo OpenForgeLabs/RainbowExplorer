@@ -36,10 +36,10 @@ export default async function ViewPage({ params, searchParams }: ViewPageProps) 
   if (!plugin || !manifest || !view) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-6 py-10">
-        <h1 className="text-2xl font-semibold text-slate-100">
+        <h1 className="text-2xl font-semibold text-foreground">
           Vista no encontrada
         </h1>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-subtle">
           El plugin o la vista solicitada no está disponible.
         </p>
       </main>
@@ -59,15 +59,15 @@ export default async function ViewPage({ params, searchParams }: ViewPageProps) 
     <main className="flex min-h-[calc(100dvh-64px)] flex-1 flex-col px-4 py-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">
+          <h1 className="text-xl font-semibold text-foreground">
             {view.title}
           </h1>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-subtle">
             {manifest.name} · Hosted View
           </p>
         </div>
       </div>
-      <div className="flex flex-1 overflow-hidden rounded-xl border border-border-dark bg-surface-dark/40">
+      <div className="flex flex-1 overflow-hidden rounded-xl border border-border bg-surface">
         <HostedViewFrame
           title={`${manifest.name} ${view.title}`}
           srcBase={src}

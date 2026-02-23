@@ -28,7 +28,7 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <aside
-      className={`relative flex-col border-r border-border-dark bg-background ${
+      className={`relative flex-col border-r border-border bg-surface ${
         collapsed ? "w-20" : "w-64"
       } hidden lg:flex`}
     >
@@ -39,13 +39,13 @@ export function Sidebar({
       >
         <div
           className={`flex h-8 w-8 items-center justify-center rounded ${
-            collapsed ? "bg-transparent text-action" : "bg-action text-white"
+            collapsed ? "bg-transparent text-primary" : "bg-primary text-primary-foreground"
           }`}
         >
           <span className="material-symbols-outlined">hub</span>
         </div>
         <div className={collapsed ? "hidden" : ""}>
-          <h1 className="text-lg font-bold leading-none text-slate-100">
+          <h1 className="text-lg font-bold leading-none text-foreground">
             RainbowExplorer
           </h1>
         </div>
@@ -55,12 +55,13 @@ export function Sidebar({
       </div>
       {onToggleCollapse ? (
         <button
-          className={`absolute top-1/2 hidden -translate-y-1/2 items-center justify-center rounded-full border border-border-dark/60 bg-surface-dark/70 text-slate-300 shadow-lg backdrop-blur hover:border-action lg:flex ${
+          className={`absolute top-1/2 hidden -translate-y-1/2 items-center justify-center rounded-full border border-border-subtle/60 bg-surface-2 text-muted-foreground shadow-[var(--rx-shadow-sm)] backdrop-blur hover:border-primary lg:flex ${
             collapsed ? "-right-3 h-10 w-10" : "-right-2 h-8 w-8"
           }`}
           type="button"
           onClick={onToggleCollapse}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           <span className="material-symbols-outlined text-[18px]">
             {collapsed ? "chevron_right" : "chevron_left"}
@@ -73,7 +74,7 @@ export function Sidebar({
         }`}
       >
         <div
-          className={`px-3 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-500 ${
+          className={`px-3 py-4 text-[10px] font-bold uppercase tracking-widest text-subtle ${
             collapsed ? "hidden" : ""
           }`}
         >
@@ -82,10 +83,11 @@ export function Sidebar({
         {NAV_ITEMS.map((item) => (
           <a
             key={item.href}
-            className={`flex w-full items-center rounded-lg py-2 text-sm text-slate-400 transition-colors hover:bg-surface-dark ${
+            className={`flex w-full items-center rounded-lg py-2 text-sm text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground ${
               collapsed ? "justify-center px-0" : "gap-3 px-3"
             }`}
             href={item.href}
+            aria-label={item.label}
             title={item.label}
           >
             <span className="material-symbols-outlined">{item.icon}</span>
@@ -93,7 +95,7 @@ export function Sidebar({
           </a>
         ))}
         <div
-          className={`px-3 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-500 ${
+          className={`px-3 py-4 text-[10px] font-bold uppercase tracking-widest text-subtle ${
             collapsed ? "hidden" : ""
           }`}
         >
@@ -102,10 +104,11 @@ export function Sidebar({
         {MGMT_ITEMS.map((item) => (
           <a
             key={item.href}
-            className={`flex w-full items-center rounded-lg py-2 text-sm text-slate-400 transition-colors hover:bg-surface-dark ${
+            className={`flex w-full items-center rounded-lg py-2 text-sm text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground ${
               collapsed ? "justify-center px-0" : "gap-3 px-3"
             }`}
             href={item.href}
+            aria-label={item.label}
             title={item.label}
           >
             <span className="material-symbols-outlined">{item.icon}</span>
@@ -115,9 +118,10 @@ export function Sidebar({
         <button
           type="button"
           onClick={onOpenSettings}
-          className={`flex w-full items-center rounded-lg py-2 text-sm text-slate-400 transition-colors hover:bg-surface-dark ${
+          className={`flex w-full items-center rounded-lg py-2 text-sm text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground ${
             collapsed ? "justify-center px-0" : "gap-3 px-3"
           }`}
+          aria-label="Settings"
           title="Settings"
         >
           <span className="material-symbols-outlined">settings</span>

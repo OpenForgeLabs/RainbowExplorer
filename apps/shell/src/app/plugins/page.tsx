@@ -10,7 +10,7 @@ export default async function PluginsPage() {
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-10">
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">Plugins</h1>
-        <p className="text-sm text-slate-300">
+        <p className="text-sm text-subtle">
           Plugins are loaded declaratively from the registry.
         </p>
       </header>
@@ -24,14 +24,14 @@ export default async function PluginsPage() {
           return (
             <div
               key={plugin.id}
-              className="rounded-2xl border border-border-dark bg-surface-dark/50 p-5 transition hover:border-action/50"
+              className="rounded-2xl border border-border bg-surface p-5 transition hover:border-primary/50"
             >
               <div className="text-lg font-semibold">{plugin.name}</div>
-              <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+              <div className="mt-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
                 {plugin.id}
               </div>
               {plugin.description ? (
-                <div className="mt-4 text-sm text-slate-300">
+                <div className="mt-4 text-sm text-muted-foreground">
                   {plugin.description}
                 </div>
               ) : null}
@@ -43,7 +43,7 @@ export default async function PluginsPage() {
               </div>
               <a
                 href={href}
-                className="mt-3 inline-flex items-center gap-2 rounded-lg border border-border-dark bg-surface-dark px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-action"
+                className="mt-3 inline-flex items-center gap-2 rounded-lg border border-transparent bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-[var(--rx-shadow-sm)] transition hover:bg-primary-hover"
               >
                 Open
               </a>

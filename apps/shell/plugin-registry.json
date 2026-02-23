@@ -1,13 +1,3 @@
 {
-  "plugins": [
-    {
-      "id": "redis",
-      "name": "Redis",
-      "baseUrl": "http://localhost:4011",
-      "mountPath": "/plugins/redis",
-      "defaultPath": "/",
-      "description": "Explore Redis keys, values, and server metrics.",
-      "enabled": true
-    }
-  ]
+  "plugins": []
 }

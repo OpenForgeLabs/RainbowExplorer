@@ -18,21 +18,37 @@ const forward = async (request: NextRequest, target: string) => {
     request.method === "GET" || request.method === "HEAD"
       ? undefined
       : await request.text();
-  const response = await fetch(target, {
-    method: request.method,
-    headers: {
-      "content-type": request.headers.get("content-type") ?? "application/json",
-    },
-    body,
-    cache: "no-store",
-  });
-  const text = await response.text();
   try {
-    const data = JSON.parse(text);
-    return NextResponse.json(data, { status: response.status });
-  } catch {
+    const response = await fetch(target, {
+      method: request.method,
+      headers: {
+        "content-type": request.headers.get("content-type") ?? "application/json",
+      },
+      body,
+      cache: "no-store",
+    });
+    const text = await response.text();
+    try {
+      const data = JSON.parse(text);
+      return NextResponse.json(data, { status: response.status });
+    } catch {
+      return NextResponse.json(
+        {
+          isSuccess: false,
+          message: "Invalid response from plugin.",
+          reasons: [text],
+        },
+        { status: 502 },
+      );
+    }
+  } catch (error) {
     return NextResponse.json(
-      { isSuccess: false, message: "Invalid response from plugin.", reasons: [text] },
+      {
+        isSuccess: false,
+        message: "Plugin is not reachable.",
+        reasons: [error instanceof Error ? error.message : "Unknown error."],
+        data: { target },
+      },
       { status: 502 },
     );
   }

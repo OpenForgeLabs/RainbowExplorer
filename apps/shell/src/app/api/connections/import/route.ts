@@ -22,7 +22,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(response, { status: 400 });
     }
     const mode = body?.mode === "replace" ? "replace" : "merge";
-    await importConnections(store as { plugins: Record<string, unknown> }, mode);
+    const typedStore = store as Parameters<typeof importConnections>[0];
+    await importConnections(typedStore, mode);
     const response: ApiResponse<null> = {
       isSuccess: true,
       message: "Connections imported.",

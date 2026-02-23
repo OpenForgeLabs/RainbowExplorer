@@ -15,7 +15,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
         onToggleCollapse={() => setCollapsed((prev) => !prev)}
         onOpenSettings={() => setSettingsOpen(true)}
       />
-      <div className="flex flex-1 flex-col">{children}</div>
+      <div className="flex flex-1 flex-col bg-surface/30">{children}</div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );

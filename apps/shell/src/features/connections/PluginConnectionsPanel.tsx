@@ -248,7 +248,6 @@ export function PluginConnectionsPanel() {
               </option>
             ))}
           </Select>
-          <button className="btn btn-primary">Test</button>
           <Button
             onClick={() => {
               if (activePluginManifest) {
@@ -256,7 +255,7 @@ export function PluginConnectionsPanel() {
                 setActivePlugin(activePluginManifest);
               }
             }}
-            variant="solid" tone="accent"
+            variant="solid" tone="primary"
           >
             Add Connection
           </Button>
@@ -275,21 +274,21 @@ export function PluginConnectionsPanel() {
             </span>
             Import
           </Button>
-          <Button variant="ghost" tone="neutral" onClick={loadPlugins}>
+          <Button variant="outline" tone="neutral" onClick={loadPlugins}>
             Refresh
           </Button>
         </div>
       </header>
 
       {isLoading ? (
-        <Card className="bg-surface">
+        <Card>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <InlineSpinner className="size-4 border-border-subtle border-t-foreground" />
             Loading plugins...
           </div>
         </Card>
       ) : error ? (
-        <Card className="bg-surface">
+        <Card className="bg-surface-2">
           <div className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
             {error}
           </div>
@@ -390,12 +389,12 @@ function ConnectionCardView({
   }, [connection.connectionName, connection.manifest, connection.pluginId]);
 
   return (
-    <Card className="overflow-hidden bg-surface">
+    <Card className="overflow-hidden">
       <div className="flex h-80 flex-col">
         <div className="flex min-h-[20%] items-start justify-between gap-2 px-2 pb-1.5 pt-2.5">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-2 text-accent">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-3 text-accent">
                 <span className="material-symbols-outlined text-[20px]">
                   {connection.icon}
                 </span>
@@ -424,7 +423,7 @@ function ConnectionCardView({
         </div>
         <div className="flex min-h-[60%] flex-1 flex-col px-2 py-1.5">
           {connection.manifest.connections.summaryEndpoint ? (
-            <div className="max-h-full flex-1 overflow-y-auto rounded-lg border border-border-subtle/60 bg-surface-2 p-1.5 text-xs text-muted-foreground">
+            <div className="max-h-full flex-1 overflow-y-auto rounded-lg border border-border-strong/40 bg-surface-2 p-1.5 text-xs text-muted-foreground">
               {summary ? (
                 <div className="grid gap-2">
                   {summary.version ? (

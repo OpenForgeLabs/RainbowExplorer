@@ -12,6 +12,9 @@ const PORT = Number(process.env.RUNNER_PORT ?? 5099);
 const HOST = process.env.RUNNER_HOST ?? "0.0.0.0";
 const PORT_RANGE_START = Number(process.env.RUNNER_PORT_START ?? 4100);
 const PORT_RANGE_END = Number(process.env.RUNNER_PORT_END ?? 4999);
+const DEFAULT_INTERNAL_PORT = Number(process.env.RUNNER_DEFAULT_INTERNAL_PORT ?? 3000);
+const SHARED_DATA_DIR =
+  process.env.RAINBOW_SHARED_DIR ?? path.join(os.homedir(), ".rainbow");
 
 const getRegistryPath = () => {
   const override = process.env.RAINBOW_REGISTRY_PATH;
@@ -96,30 +99,49 @@ const ensureContainerRemoved = async (name) => {
 };
 
 const startPlugin = async (payload) => {
-  const { id, name, image, internalPort } = payload;
-  if (!id || !image || !internalPort) {
-    throw new Error("id, image, and internalPort are required.");
+  const { id } = payload;
+  if (!id) {
+    throw new Error("id is required.");
   }
+
+  const registry = await loadRegistry();
+  const plugins = Array.isArray(registry.plugins) ? registry.plugins : [];
+  const existing = plugins.find((item) => item.id === id);
+
+  const image = payload.image ?? existing?.image;
+  if (!image) {
+    throw new Error("image is required.");
+  }
+  const name = payload.name ?? existing?.name ?? id;
+  const internalPort =
+    Number(payload.internalPort ?? existing?.internalPort ?? DEFAULT_INTERNAL_PORT);
 
   const hostPort = await findAvailablePort();
   const cname = containerName(id);
   await ensureContainerRemoved(cname);
+  await ensureDir(path.join(SHARED_DATA_DIR, "plugin-registry.json"));
   await runDocker([
     "run",
     "-d",
     "--name",
     cname,
+    "--pull",
+    "always",
+    "-e",
+    `PORT=${internalPort}`,
+    "-e",
+    "HOSTNAME=0.0.0.0",
+    "-v",
+    `${SHARED_DATA_DIR}:/root/.rainbow`,
     "-p",
     `${hostPort}:${internalPort}`,
     image,
   ]);
 
-  const registry = await loadRegistry();
-  const plugins = Array.isArray(registry.plugins) ? registry.plugins : [];
   const idx = plugins.findIndex((item) => item.id === id);
   const entry = {
     id,
-    name: name ?? id,
+    name,
     image,
     internalPort,
     hostPort,

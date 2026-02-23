@@ -23,7 +23,7 @@ export function FieldRenderer({ field, value, onChange }: FieldRendererProps) {
   if (field.type === "select") {
     return (
       <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-slate-200">
+        <label className="text-sm font-medium text-foreground">
           {field.label}
         </label>
         <Select
@@ -44,7 +44,7 @@ export function FieldRenderer({ field, value, onChange }: FieldRendererProps) {
   if (field.type === "textarea") {
     return (
       <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-slate-200">
+        <label className="text-sm font-medium text-foreground">
           {field.label}
         </label>
         <Textarea
@@ -59,7 +59,7 @@ export function FieldRenderer({ field, value, onChange }: FieldRendererProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-slate-200">
+      <label className="text-sm font-medium text-foreground">
         {field.label}
       </label>
       <Input
