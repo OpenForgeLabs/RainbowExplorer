@@ -1,14 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, FormField, Input } from "@openforgelabs/rainbow-ui";
+import {
+  Badge,
+  Button,
+  Card,
+  FormField,
+  InlineSpinner,
+  Input,
+} from "@openforgelabs/rainbow-ui";
 import type { PluginRegistryEntry } from "@/lib/pluginRegistry";
 
 type CatalogPlugin = {
   id: string;
   name: string;
   image: string;
-  internalPort: number;
+  internalPort?: number;
   description?: string;
   tags?: string[];
 };
@@ -36,6 +43,7 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
   });
   const [status, setStatus] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [isInstalling, setIsInstalling] = useState(false);
 
   const installedIds = useMemo(
     () => new Set(plugins.map((plugin) => plugin.id)),
@@ -66,14 +74,46 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
 
   const handleInstall = async (payload: CatalogPlugin) => {
     setBusyId(payload.id);
+    setIsInstalling(true);
     setStatus(null);
     try {
-      const response = await callRunner("/plugins/install", payload);
+      const response = await callRunner("/plugins/install", {
+        id: payload.id,
+        name: payload.name,
+        image: payload.image,
+      });
       if (!response.ok) {
         setStatus(response.message ?? "Failed to install plugin.");
         return;
       }
       setStatus("Plugin installed. Refresh to load it.");
+    } catch {
+      setStatus("Runner is not reachable.");
+    } finally {
+      setIsInstalling(false);
+      setBusyId(null);
+    }
+  };
+
+  const handleUpdate = async (plugin: PluginRegistryEntry) => {
+    const image = (plugin as Record<string, unknown>).image;
+    if (typeof image !== "string" || !image) {
+      setStatus("No image recorded for this plugin. Reinstall from image.");
+      return;
+    }
+    setBusyId(plugin.id);
+    setStatus(null);
+    try {
+      const response = await callRunner("/plugins/install", {
+        id: plugin.id,
+        name: plugin.name,
+        image,
+      });
+      if (!response.ok) {
+        setStatus(response.message ?? "Failed to update plugin.");
+        return;
+      }
+      setStatus("Plugin updated. Refresh to load changes.");
     } catch {
       setStatus("Runner is not reachable.");
     } finally {
@@ -85,12 +125,7 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
     setBusyId(plugin.id);
     setStatus(null);
     try {
-      const response = await callRunner("/plugins/start", {
-        id: plugin.id,
-        name: plugin.name,
-        image: (plugin as Record<string, unknown>).image,
-        internalPort: (plugin as Record<string, unknown>).internalPort,
-      });
+      const response = await callRunner("/plugins/start", { id: plugin.id });
       if (!response.ok) {
         setStatus(response.message ?? "Failed to start plugin.");
         return;
@@ -138,13 +173,13 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
   };
 
   return (
-    <Card className="bg-surface-dark/40">
+    <Card className="bg-surface">
       <div className="flex flex-col gap-6">
         <div>
-          <h2 className="text-lg font-semibold text-slate-100">
+          <h2 className="text-lg font-semibold text-foreground">
             Plugin Runner
           </h2>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-subtle">
             Instala plugins desde imágenes Docker y el runner asigna un puerto
             libre automáticamente.
           </p>
@@ -185,33 +220,39 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
 
         <div className="flex items-center gap-2">
           <Button
-            variant="action"
+            variant="solid" tone="primary"
             onClick={() =>
               handleInstall({
                 id: form.id,
                 name: form.name || form.id,
                 image: form.image,
-                internalPort: 4011,
               })
             }
-            disabled={!form.id || !form.image}
+            disabled={!form.id || !form.image || isInstalling}
           >
-            Install from image
+            {isInstalling ? (
+              <span className="inline-flex items-center gap-2">
+                <InlineSpinner className="h-4 w-4" />
+                Installing
+              </span>
+            ) : (
+              "Install from image"
+            )}
           </Button>
-          <Button variant="secondary" onClick={() => window.location.reload()}>
+          <Button variant="outline" tone="neutral" onClick={() => window.location.reload()}>
             Refresh registry
           </Button>
-          {status ? <span className="text-xs text-slate-400">{status}</span> : null}
+          {status ? <span className="text-xs text-subtle">{status}</span> : null}
         </div>
 
         <div className="flex flex-col gap-3">
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <div className="text-xs font-semibold uppercase tracking-widest text-subtle">
             Catalog
           </div>
           {isLoadingCatalog ? (
-            <div className="text-sm text-slate-400">Loading catalog...</div>
+            <div className="text-sm text-subtle">Loading catalog...</div>
           ) : catalog.length === 0 ? (
-            <div className="text-sm text-slate-400">
+            <div className="text-sm text-subtle">
               No catalog configured. Set NEXT_PUBLIC_PLUGIN_CATALOG_URL to show
               available plugins.
             </div>
@@ -220,29 +261,29 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
               {catalog.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-xl border border-border-dark bg-surface-dark/50 p-4"
+                  className="rounded-xl border border-border bg-surface-2 p-4"
                 >
-                  <div className="text-sm font-semibold text-slate-100">
+                  <div className="text-sm font-semibold text-foreground">
                     {item.name}
                   </div>
-                  <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                  <div className="mt-1 text-xs uppercase tracking-[0.2em] text-subtle">
                     {item.id}
                   </div>
                   {item.description ? (
-                    <div className="mt-3 text-xs text-slate-300">
+                    <div className="mt-3 text-xs text-subtle">
                       {item.description}
                     </div>
                   ) : null}
                   <div className="mt-3 flex flex-wrap gap-2">
                     {(item.tags ?? []).map((tag) => (
-                      <Badge key={tag} variant="tag">
+                      <Badge key={tag} variant="accent">
                         {tag}
                       </Badge>
                     ))}
                   </div>
                   <Button
                     className="mt-4"
-                    variant={installedIds.has(item.id) ? "secondary" : "action"}
+                    variant={installedIds.has(item.id) ? "secondary" : "primary"}
                     onClick={() => handleInstall(item)}
                     disabled={busyId === item.id}
                   >
@@ -255,38 +296,45 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
         </div>
 
         <div className="flex flex-col gap-3">
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <div className="text-xs font-semibold uppercase tracking-widest text-subtle">
             Runner actions
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {plugins.map((plugin) => (
               <div
                 key={plugin.id}
-                className="rounded-xl border border-border-dark bg-surface-dark/50 p-4"
+                className="rounded-xl border border-border bg-surface-2 p-4"
               >
-                <div className="text-sm font-semibold text-slate-100">
+                <div className="text-sm font-semibold text-foreground">
                   {plugin.name}
                 </div>
-                <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                <div className="mt-1 text-xs uppercase tracking-[0.2em] text-subtle">
                   {plugin.id}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button
-                    variant="navigate"
+                    variant="solid" tone="accent"
                     onClick={() => handleStart(plugin)}
                     disabled={busyId === plugin.id}
                   >
                     Start
                   </Button>
                   <Button
-                    variant="secondary"
+                    variant="solid" tone="primary"
+                    onClick={() => handleUpdate(plugin)}
+                    disabled={busyId === plugin.id}
+                  >
+                    Update
+                  </Button>
+                  <Button
+                    variant="outline" tone="neutral"
                     onClick={() => handleStop(plugin.id)}
                     disabled={busyId === plugin.id}
                   >
                     Stop
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="ghost" tone="neutral"
                     onClick={() => handleRemove(plugin.id)}
                     disabled={busyId === plugin.id}
                   >

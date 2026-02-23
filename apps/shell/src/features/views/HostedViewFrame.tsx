@@ -23,8 +23,8 @@ export function HostedViewFrame({ srcBase, title }: HostedViewFrameProps) {
     if (!frame?.contentWindow) {
       return;
     }
-    frame.contentWindow.postMessage({ type: "theme", value: theme }, "*");
-  }, [theme]);
+    frame.contentWindow.postMessage({ type: "theme", value: theme }, new URL(srcBase).origin);
+  }, [theme, srcBase]);
 
   return (
     <iframe

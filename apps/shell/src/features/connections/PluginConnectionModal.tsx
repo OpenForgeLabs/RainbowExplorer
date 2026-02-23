@@ -31,7 +31,6 @@ export function PluginConnectionModal({
   const [values, setValues] = useState<Record<string, string | number | boolean | null>>({});
   const [testStatus, setTestStatus] = useState<StatusState>(defaultStatus);
   const [saveStatus, setSaveStatus] = useState<StatusState>(defaultStatus);
-
   const fields = plugin.connections.schema.fields;
 
   useEffect(() => {
@@ -60,11 +59,14 @@ export function PluginConnectionModal({
   const requestBody = useMemo(() => ({ ...values }), [values]);
 
   const resolveEndpoint = (path: string) => {
-    const trimmed = path.replace(/^\//, "");
-    if (plugin.connections.provider === "shell") {
-      return `/${trimmed}`;
+    if (path.startsWith("/api/")) {
+      return path;
     }
-    return `/api/plugins/${plugin.id}/proxy/${trimmed}`;
+    const trimmed = path.replace(/^\//, "");
+    if (!trimmed) {
+      return `/api/connections/${plugin.id}`;
+    }
+    return `/api/connections/${plugin.id}/${trimmed}`;
   };
 
   const request = async (path: string, method: "POST" | "PUT") => {
@@ -92,18 +94,7 @@ export function PluginConnectionModal({
       return;
     }
 
-    if (!plugin.connections.testEndpoint) {
-      const message = "Test endpoint not available for this plugin.";
-      setTestStatus({ state: "error", message });
-      pushToast({ title: "Test unavailable", message, variant: "error" });
-      return;
-    }
-
-    const testEndpoint =
-      plugin.connections.provider === "shell"
-        ? `/api/connections/${plugin.id}/test`
-        : plugin.connections.testEndpoint;
-    const { ok, data } = await request(testEndpoint, "POST");
+    const { ok, data } = await request("test", "POST");
     if (!ok || !data?.isSuccess) {
       const message =
         data?.reasons?.[0] ?? data?.message ?? "Test connection failed.";
@@ -131,7 +122,7 @@ export function PluginConnectionModal({
       return;
     }
 
-    const { ok, data } = await request(plugin.connections.createEndpoint, "POST");
+    const { ok, data } = await request("", "POST");
     if (!ok || !data?.isSuccess) {
       const message =
         data?.reasons?.[0] ?? data?.message ?? "Failed to save connection.";
@@ -154,25 +145,24 @@ export function PluginConnectionModal({
   return (
     <Modal
       open={open}
+      onClose={onClose}
       title={plugin.connections.schema.title}
       description={plugin.connections.schema.description}
       footer={
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="outline" tone="neutral" onClick={onClose}>
             Cancel
           </Button>
           <div className="flex gap-3">
-            {plugin.connections.testEndpoint ? (
-              <Button
-                variant="ghost"
-                className="gap-2 border border-action/30"
-                onClick={handleTest}
-                disabled={testStatus.state === "loading"}
-              >
-                <span className="material-symbols-outlined text-lg">bolt</span>
-                {testStatus.state === "loading" ? "Testing..." : "Test Connection"}
-              </Button>
-            ) : null}
+            <Button
+              variant="ghost" tone="neutral"
+              className="gap-2 border border-transparent bg-accent text-accent-foreground shadow-[var(--rx-shadow-sm)] hover:bg-accent-hover"
+              onClick={handleTest}
+              disabled={testStatus.state === "loading"}
+            >
+              <span className="material-symbols-outlined text-lg">bolt</span>
+              {testStatus.state === "loading" ? "Testing..." : "Test Connection"}
+            </Button>
             <Button onClick={handleSave} disabled={saveStatus.state === "loading"}>
               {saveStatus.state === "loading" ? "Saving..." : "Add Connection"}
             </Button>
@@ -196,10 +186,10 @@ export function PluginConnectionModal({
           <div
             className={`rounded-lg border px-4 py-3 text-sm ${
               testStatus.state === "success"
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                ? "border-transparent bg-success text-success-foreground shadow-[var(--rx-shadow-sm)]"
                 : testStatus.state === "error"
-                  ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
-                  : "border-border-dark bg-surface-dark/60 text-slate-300"
+                  ? "border-transparent bg-danger text-danger-foreground shadow-[var(--rx-shadow-sm)]"
+                  : "border-border bg-surface-2 text-muted-foreground"
             }`}
           >
             {testStatus.state === "loading" ? "Testing connection..." : testStatus.message}
@@ -210,10 +200,10 @@ export function PluginConnectionModal({
           <div
             className={`rounded-lg border px-4 py-3 text-sm ${
               saveStatus.state === "success"
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                ? "border-transparent bg-success text-success-foreground shadow-[var(--rx-shadow-sm)]"
                 : saveStatus.state === "error"
-                  ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
-                  : "border-border-dark bg-surface-dark/60 text-slate-300"
+                  ? "border-transparent bg-danger text-danger-foreground shadow-[var(--rx-shadow-sm)]"
+                  : "border-border bg-surface-2 text-muted-foreground"
             }`}
           >
             {saveStatus.state === "loading" ? "Saving connection..." : saveStatus.message}

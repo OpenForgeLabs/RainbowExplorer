@@ -56,22 +56,22 @@ export function ViewsCatalog({ views }: ViewsCatalogProps) {
         const options = item.connections ?? [];
         const selectedName = selected[key] ?? "";
         return (
-          <Card key={key} className="bg-surface-dark/40">
+          <Card key={key} className="bg-surface">
             <div className="flex flex-col gap-4">
               <div>
-                <div className="text-lg font-semibold text-slate-100">
+                <div className="text-lg font-semibold text-foreground">
                   {item.view.title}
                 </div>
-                <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                <div className="mt-1 text-xs uppercase tracking-[0.2em] text-subtle">
                   {item.pluginName}
                 </div>
-                <p className="mt-3 text-sm text-slate-300">
+                <p className="mt-3 text-sm text-subtle">
                   {item.view.route}
                 </p>
               </div>
 
               <div className="flex flex-col gap-2">
-                <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <div className="text-xs font-semibold uppercase tracking-widest text-subtle">
                   Connection
                 </div>
                 <Select
@@ -94,11 +94,11 @@ export function ViewsCatalog({ views }: ViewsCatalogProps) {
               </div>
 
               <div className="flex items-center justify-between">
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-muted-foreground">
                   {options.length} available
                 </div>
                 <Button
-                  variant="navigate"
+                  variant="solid" tone="primary"
                   disabled={!selectedName}
                   onClick={() => {
                     if (!selectedName) {

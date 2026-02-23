@@ -40,17 +40,8 @@ const openRoute = (manifest: PluginManifest, connectionName: string) => {
   return `/views/${manifest.id}/${viewId}?conn=${encodeURIComponent(connectionName)}`;
 };
 
-const resolveConnectionEndpoint = (
-  pluginId: string,
-  manifest: PluginManifest,
-  endpoint: string,
-) => {
-  const trimmed = endpoint.replace(/^\//, "");
-  if (manifest.connections.provider === "shell") {
-    return `/${trimmed}`;
-  }
-  return `/api/plugins/${pluginId}/proxy/${trimmed}`;
-};
+const resolveConnectionEndpoint = (pluginId: string) =>
+  `/api/connections/${pluginId}`;
 
 const resolveSummaryEndpoint = (
   pluginId: string,
@@ -148,11 +139,7 @@ export function PluginConnectionsPanel() {
       plugins.map(async (plugin) => {
         try {
           const response = await fetch(
-            resolveConnectionEndpoint(
-              plugin.registry.id,
-              plugin.manifest,
-              plugin.manifest.connections.listEndpoint,
-            ),
+            resolveConnectionEndpoint(plugin.registry.id),
             { cache: "no-store" },
           );
           const data = await response.json();
@@ -228,15 +215,16 @@ export function PluginConnectionsPanel() {
     <section className="flex flex-col gap-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-slate-100">
+          <h2 className="text-xl font-semibold text-foreground">
             Resource Connections
           </h2>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-muted-foreground">
             All connections in one place. Filter by technology and manage exports.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SelectWithIcon
+            aria-label="Filter technologies"
             icon="filter_list"
             wrapperClassName="h-10 px-3"
             value={filter}
@@ -260,6 +248,7 @@ export function PluginConnectionsPanel() {
               </option>
             ))}
           </Select>
+          <button className="btn btn-primary">Test</button>
           <Button
             onClick={() => {
               if (activePluginManifest) {
@@ -267,17 +256,18 @@ export function PluginConnectionsPanel() {
                 setActivePlugin(activePluginManifest);
               }
             }}
+            variant="solid" tone="accent"
           >
             Add Connection
           </Button>
-          <Button variant="navigate" onClick={handleExport}>
+          <Button variant="solid" tone="accent" onClick={handleExport}>
             <span className="material-symbols-outlined text-[18px]">
               upload
             </span>
             Export
           </Button>
           <Button
-            variant="navigate"
+            variant="solid" tone="accent"
             onClick={() => fileInputRef.current?.click()}
           >
             <span className="material-symbols-outlined text-[18px]">
@@ -285,22 +275,22 @@ export function PluginConnectionsPanel() {
             </span>
             Import
           </Button>
-          <Button variant="ghost" onClick={loadPlugins}>
+          <Button variant="ghost" tone="neutral" onClick={loadPlugins}>
             Refresh
           </Button>
         </div>
       </header>
 
       {isLoading ? (
-        <Card className="bg-surface-dark/30">
-          <div className="flex items-center gap-2 text-sm text-slate-300">
-            <InlineSpinner className="size-4 border-slate-300" />
+        <Card className="bg-surface">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <InlineSpinner className="size-4 border-border-subtle border-t-foreground" />
             Loading plugins...
           </div>
         </Card>
       ) : error ? (
-        <Card className="bg-surface-dark/30">
-          <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        <Card className="bg-surface">
+          <div className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
             {error}
           </div>
         </Card>
@@ -357,11 +347,11 @@ function ConnectionCardView({
   onEdit: () => void;
 }) {
   const tagClassesByPlugin: Record<string, string> = {
-    redis: "border-tag/40 bg-tag/10 text-tag",
+    redis: "border-transparent bg-accent text-accent-foreground shadow-[var(--rx-shadow-xs)]",
   };
   const tagClass =
     tagClassesByPlugin[connection.pluginId] ??
-    "border-tag/30 bg-tag/10 text-tag";
+    "border-border bg-surface-2 text-foreground";
   const [summary, setSummary] = useState<Record<string, string | number> | null>(
     null,
   );
@@ -400,21 +390,21 @@ function ConnectionCardView({
   }, [connection.connectionName, connection.manifest, connection.pluginId]);
 
   return (
-    <Card className="overflow-hidden bg-surface-dark/30">
+    <Card className="overflow-hidden bg-surface">
       <div className="flex h-80 flex-col">
         <div className="flex min-h-[20%] items-start justify-between gap-2 px-2 pb-1.5 pt-2.5">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-dark text-action">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-2 text-accent">
                 <span className="material-symbols-outlined text-[20px]">
                   {connection.icon}
                 </span>
               </div>
               <div>
-                <div className="text-base font-semibold text-slate-100">
+                <div className="text-base font-semibold text-foreground">
                   {connection.connectionName}
                 </div>
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-muted-foreground">
                   {connection.environment ?? "development"} ·{" "}
                   {connection.useTls ? "TLS" : "Plain"}
                 </div>
@@ -427,53 +417,53 @@ function ConnectionCardView({
             {connection.pluginName}
           </span>
         </div>
-        <div className="px-2 text-xs text-slate-400">
+        <div className="px-2 text-xs text-muted-foreground">
           {connection.host
             ? `${connection.host}${connection.port ? `:${connection.port}` : ""}`
             : "Host not provided"}
         </div>
         <div className="flex min-h-[60%] flex-1 flex-col px-2 py-1.5">
           {connection.manifest.connections.summaryEndpoint ? (
-            <div className="max-h-full flex-1 overflow-y-auto rounded-lg border border-border-dark/60 bg-surface-dark/50 p-1.5 text-xs text-slate-300">
+            <div className="max-h-full flex-1 overflow-y-auto rounded-lg border border-border-subtle/60 bg-surface-2 p-1.5 text-xs text-muted-foreground">
               {summary ? (
                 <div className="grid gap-2">
                   {summary.version ? (
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Version</span>
+                      <span className="text-subtle">Version</span>
                       <span className="font-semibold">{summary.version}</span>
                     </div>
                   ) : null}
                   {summary.usedMemoryHuman ? (
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Memory</span>
+                      <span className="text-subtle">Memory</span>
                       <span className="font-semibold">{summary.usedMemoryHuman}</span>
                     </div>
                   ) : null}
                   {typeof summary.connectedClients === "number" ? (
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Clients</span>
+                      <span className="text-subtle">Clients</span>
                       <span className="font-semibold">{summary.connectedClients}</span>
                     </div>
                   ) : null}
                   {typeof summary.opsPerSec === "number" ? (
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Ops/sec</span>
+                      <span className="text-subtle">Ops/sec</span>
                       <span className="font-semibold">{summary.opsPerSec}</span>
                     </div>
                   ) : null}
                 </div>
               ) : summaryError ? (
-                <div className="flex h-full items-center justify-center text-rose-300">
+                <div className="flex h-full items-center justify-center text-danger">
                   Summary unavailable
                 </div>
               ) : (
-                <div className="flex h-full items-center justify-center text-slate-500">
+                <div className="flex h-full items-center justify-center text-subtle">
                   Loading summary…
                 </div>
               )}
             </div>
           ) : (
-            <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border-dark/60 bg-surface-dark/40 text-xs text-slate-500">
+            <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border-subtle/60 bg-surface-2 text-xs text-subtle">
               No summary available for this plugin.
             </div>
           )}
@@ -481,7 +471,7 @@ function ConnectionCardView({
         <div className="mt-auto flex min-h-[20%] flex-wrap items-center justify-between gap-2 px-2 pb-2.5 pt-1.5">
           <div className="flex items-center gap-2">
             <a
-              className="rounded-lg border border-navigate/40 bg-navigate/10 px-3 py-1.5 text-xs font-semibold text-navigate transition hover:border-navigate/70 hover:bg-navigate/20"
+              className="rounded-lg border border-transparent bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-[var(--rx-shadow-sm)] transition hover:bg-primary-hover"
               href={openRoute(connection.manifest, connection.connectionName)}
             >
               Open
@@ -489,12 +479,12 @@ function ConnectionCardView({
             <button
               type="button"
               onClick={onEdit}
-              className="rounded-lg border border-action/40 bg-action/10 px-3 py-1.5 text-xs font-semibold text-action transition hover:border-action/70 hover:bg-action/20"
+              className="rounded-lg border border-transparent bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground shadow-[var(--rx-shadow-sm)] transition hover:bg-accent-hover"
             >
               Edit
             </button>
           </div>
-          <span className="text-[10px] uppercase tracking-widest text-slate-500">
+          <span className="text-[10px] uppercase tracking-widest text-subtle">
             {connection.pluginId}
           </span>
         </div>
