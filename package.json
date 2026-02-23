@@ -6,7 +6,8 @@
     "dev:shell": "pnpm --dir apps/shell dev",
     "dev:runner": "pnpm --dir apps/runner dev",
     "dev:all": "node scripts/dev-all.mjs",
-    "install:all": "pnpm install"
+    "install:all": "pnpm install",
+    "check:styles": "node scripts/check-no-hardcoded-colors.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.4"
