@@ -23,8 +23,8 @@ importers:
         specifier: ^0.1.1
         version: 0.1.1
       '@openforgelabs/rainbow-ui':
-        specifier: ^2.0.2
-        version: 2.0.2
+        specifier: ^2.0.4
+        version: 2.0.4
       next:
         specifier: 16.1.6
         version: 16.1.6(@babel/core@7.29.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -431,8 +431,8 @@ packages:
   '@openforgelabs/rainbow-contracts@0.1.1':
     resolution: {integrity: sha512-SKdXEo54NZDsdvy46A3tAf9Br5PuFF8HUau+fX4XVlo+8dQa1ybiCV1nqHNpJ2BfwbZr6hGbTxELKAr98XSudw==, tarball: https://npm.pkg.github.com/download/@openforgelabs/rainbow-contracts/0.1.1/c3e1ecbbc15219a113ddba2881e97843008ada39}
 
-  '@openforgelabs/rainbow-ui@2.0.2':
-    resolution: {integrity: sha512-S1zs/6CqBimjX99jGBZVGdaz71kTE0CxFVAJrf+J7jnMgQHRThgjvfW6iRmqbFpQXgF9iCkd/Oojeoi92aOmiQ==, tarball: https://npm.pkg.github.com/download/@openforgelabs/rainbow-ui/2.0.2/ed4d18cc876a0108ec79777b7ed3d43e59db5d48}
+  '@openforgelabs/rainbow-ui@2.0.4':
+    resolution: {integrity: sha512-YGhc93NPSputq317g9yHrPwTvGxAfSoULCv6Ru4RBLQwZJzvFzEAJMUuM1QOSZgI6VzRX8E/Qqk78S25qszMnA==, tarball: https://npm.pkg.github.com/download/@openforgelabs/rainbow-ui/2.0.4/c938af3b19014e2dd4a17e4d85b040dae9bcdf64}
 
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
@@ -2296,7 +2296,7 @@ snapshots:
 
   '@openforgelabs/rainbow-contracts@0.1.1': {}
 
-  '@openforgelabs/rainbow-ui@2.0.2': {}
+  '@openforgelabs/rainbow-ui@2.0.4': {}
 
   '@rtsao/scc@1.1.0': {}
 
