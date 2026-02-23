@@ -9,7 +9,7 @@ type HostedViewFrameProps = {
 };
 
 export function HostedViewFrame({ srcBase, title }: HostedViewFrameProps) {
-  const { theme } = useTheme();
+  const { theme, createThemeMessage } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
 
   const src = useMemo(() => {
@@ -18,13 +18,21 @@ export function HostedViewFrame({ srcBase, title }: HostedViewFrameProps) {
     return url.toString();
   }, [srcBase, theme]);
 
-  useEffect(() => {
+  const postThemeToFrame = () => {
     const frame = frameRef.current;
     if (!frame?.contentWindow) {
       return;
     }
-    frame.contentWindow.postMessage({ type: "theme", value: theme }, new URL(srcBase).origin);
-  }, [theme, srcBase]);
+
+    frame.contentWindow.postMessage(
+      createThemeMessage(theme),
+      new URL(srcBase).origin,
+    );
+  };
+
+  useEffect(() => {
+    postThemeToFrame();
+  }, [theme, srcBase, createThemeMessage]);
 
   return (
     <iframe
@@ -32,6 +40,7 @@ export function HostedViewFrame({ srcBase, title }: HostedViewFrameProps) {
       title={title}
       src={src}
       className="h-full w-full border-0"
+      onLoad={postThemeToFrame}
     />
   );
 }

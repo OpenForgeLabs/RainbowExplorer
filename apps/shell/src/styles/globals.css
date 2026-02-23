@@ -1,6 +1,7 @@
-@import "@openforgelabs/rainbow-ui/styles/theme.css";
+@config "../../tailwind.config.ts";
 @import "tailwindcss";
-@source "../../node_modules/@openforgelabs/rainbow-ui/src/**/*.{ts,tsx}";
+@import "@openforgelabs/rainbow-ui/styles/themes.css";
+@import "@openforgelabs/rainbow-ui/styles/semantics.css";
 
 html,
 body {
@@ -8,8 +9,8 @@ body {
 }
 
 body {
-  background: rgb(var(--rx-background));
-  color: rgb(var(--rx-foreground));
+  background: rgb(var(--rx-color-bg));
+  color: rgb(var(--rx-color-text));
 }
 
 button,
