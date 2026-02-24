@@ -6,9 +6,12 @@ services:
     environment:
       - PLUGIN_RUNNER_URL=http://runner:5099
       - NEXT_PUBLIC_PLUGIN_RUNNER_URL=http://runner:5099
+      - RAINBOW_REGISTRY_PATH=/root/.rainbow/plugin-registry.json
     depends_on:
       runner:
         condition: service_healthy
+    volumes:
+      - rainbow-data:/root/.rainbow
 
   runner:
     image: ghcr.io/openforgelabs/rainbowexplorer-runner:latest
@@ -21,9 +24,8 @@ services:
       - RUNNER_PORT_END=4999
       - RAINBOW_SHARED_DIR=/root/.rainbow
       - RUNNER_SHARED_DOCKER_VOLUME=rainbow-data
-      # Browser-facing URL for plugin views exposed by runner.
       - RUNNER_PLUGIN_PUBLIC_PROTOCOL=http
-      - RUNNER_PLUGIN_PUBLIC_HOST=localhost
+      - RUNNER_PLUGIN_PUBLIC_HOST=host.docker.internal
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - rainbow-data:/root/.rainbow
@@ -33,12 +35,6 @@ services:
       timeout: 5s
       retries: 6
       start_period: 5s
-
-  plugin-redis:
-    image: ghcr.io/openforgelabs/rainbow-redis:latest
-    profiles: ["plugins"]
-    ports:
-      - "4011:4011"
 
 volumes:
   rainbow-data:
