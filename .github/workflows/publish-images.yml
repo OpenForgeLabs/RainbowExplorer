@@ -38,21 +38,8 @@ env:
   IMAGE_RUNNER: ghcr.io/openforgelabs/rainbowexplorer-runner
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: shell
-            image: ghcr.io/openforgelabs/rainbowexplorer-shell
-            dockerfile: docker/Dockerfile.shell
-            use_secret: true
-          - name: runner
-            image: ghcr.io/openforgelabs/rainbowexplorer-runner
-            dockerfile: docker/Dockerfile.runner
-            use_secret: false
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -111,73 +98,101 @@ jobs:
           echo "shell_version=$curr_shell_version" >> "$GITHUB_OUTPUT"
           echo "runner_version=$curr_runner_version" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
+      - name: Resolve publish scope
+        id: scope
         if: steps.changesets.outputs.hasChangesets == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ github.event.inputs.image_target || 'all' }}"
+
+          publish_shell="false"
+          if [[ "${{ steps.detect.outputs.shell_changed }}" == "true" ]]; then
+            if [[ "$target" == "all" || "$target" == "shell" ]]; then
+              publish_shell="true"
+            fi
+          fi
+
+          publish_runner="false"
+          if [[ "${{ steps.detect.outputs.runner_changed }}" == "true" ]]; then
+            if [[ "$target" == "all" || "$target" == "runner" ]]; then
+              publish_runner="true"
+            fi
+          fi
+
+          echo "publish_shell=$publish_shell" >> "$GITHUB_OUTPUT"
+          echo "publish_runner=$publish_runner" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        if: steps.changesets.outputs.hasChangesets == 'false' && (steps.scope.outputs.publish_shell == 'true' || steps.scope.outputs.publish_runner == 'true')
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.hasChangesets == 'false' && (steps.scope.outputs.publish_shell == 'true' || steps.scope.outputs.publish_runner == 'true')
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.hasChangesets == 'false' && (steps.scope.outputs.publish_shell == 'true' || steps.scope.outputs.publish_runner == 'true')
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve Publish Scope
-        id: scope
-        if: steps.changesets.outputs.hasChangesets == 'false'
-        shell: bash
-        run: |
-          publish="false"
-          target="${{ github.event.inputs.image_target || 'all' }}"
-          image="${{ matrix.name }}"
-
-          if [[ "$image" == "shell" && "${{ steps.detect.outputs.shell_changed }}" == "true" ]]; then
-            if [[ "$target" == "all" || "$target" == "shell" ]]; then
-              publish="true"
-            fi
-          fi
-
-          if [[ "$image" == "runner" && "${{ steps.detect.outputs.runner_changed }}" == "true" ]]; then
-            if [[ "$target" == "all" || "$target" == "runner" ]]; then
-              publish="true"
-            fi
-          fi
-
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
-
-      - name: Docker metadata
-        if: steps.scope.outputs.publish == 'true'
-        id: meta
+      - name: Docker metadata (shell)
+        id: meta_shell
+        if: steps.scope.outputs.publish_shell == 'true'
         uses: docker/metadata-action@v5
         with:
-          images: ${{ matrix.image }}
+          images: ${{ env.IMAGE_SHELL }}
           tags: |
-            type=raw,value=${{ matrix.name == 'shell' && steps.detect.outputs.shell_version || steps.detect.outputs.runner_version }}
+            type=raw,value=${{ steps.detect.outputs.shell_version }}
             type=sha
             type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' || github.event.inputs.publish_latest == 'true' }}
 
+      - name: Build & push (shell)
+        if: steps.scope.outputs.publish_shell == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.shell
+          push: true
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          labels: ${{ steps.meta_shell.outputs.labels }}
+          tags: ${{ steps.meta_shell.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          secrets: |
+            gh_packages_token=${{ secrets.GH_PACKAGES_TOKEN != '' && secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
       - name: Smoke test runner image (docker-cli availability)
-        if: steps.scope.outputs.publish == 'true' && matrix.name == 'runner'
+        if: steps.scope.outputs.publish_runner == 'true'
         run: |
           docker build -f docker/Dockerfile.runner -t rainbow-runner-smoke:${{ github.sha }} .
           docker run --rm rainbow-runner-smoke:${{ github.sha }} docker --version
 
-      - name: Build & push (${{ matrix.name }})
-        if: steps.scope.outputs.publish == 'true'
+      - name: Docker metadata (runner)
+        id: meta_runner
+        if: steps.scope.outputs.publish_runner == 'true'
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_RUNNER }}
+          tags: |
+            type=raw,value=${{ steps.detect.outputs.runner_version }}
+            type=sha
+            type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' || github.event.inputs.publish_latest == 'true' }}
+
+      - name: Build & push (runner)
+        if: steps.scope.outputs.publish_runner == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: docker/Dockerfile.runner
           push: true
           platforms: linux/amd64,linux/arm64
           provenance: false
-          labels: ${{ steps.meta.outputs.labels }}
-          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta_runner.outputs.labels }}
+          tags: ${{ steps.meta_runner.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          secrets: ${{ matrix.use_secret && format('gh_packages_token={0}', secrets.GH_PACKAGES_TOKEN != '' && secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN) || '' }}
