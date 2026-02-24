@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -44,6 +44,35 @@ type RunnerApiResponse<T> = {
   data?: T;
 };
 
+type InstallJobData = {
+  id: string;
+  type: "install";
+  status: "queued" | "running" | "succeeded" | "failed";
+  phase?: string;
+  progress?: number;
+  message?: string;
+  payload?: { image?: string; pluginId?: string };
+  createdAt: string;
+  updatedAt: string;
+  result?: { id?: string; name?: string } | null;
+  error?: string | null;
+};
+
+type PendingInstallCard = {
+  localId: string;
+  jobId: string;
+  image: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  phase?: string;
+  progress?: number;
+  message?: string;
+  pluginId?: string;
+  error?: string;
+  showError?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 type PluginRegistryWorkspaceProps = {
   initialItems: PluginWithManifest[];
 };
@@ -68,8 +97,42 @@ const elapsedFrom = (iso?: string) => {
   return `${minutes}m`;
 };
 
+const clampProgress = (value?: number) => {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, Math.round(value ?? 0)));
+};
+
+const fallbackInstallMessage = (status: PendingInstallCard["status"]) => {
+  if (status === "queued") return "Queued for installation...";
+  if (status === "running") return "Installing plugin...";
+  if (status === "succeeded") return "Installed successfully.";
+  return "Installation failed.";
+};
+
+const installPollIntervalMsFromEnv = Number(
+  process.env.NEXT_PUBLIC_INSTALL_JOB_POLL_INTERVAL_MS ?? 5000,
+);
+const INSTALL_POLL_INTERVAL_MS =
+  Number.isFinite(installPollIntervalMsFromEnv) && installPollIntervalMsFromEnv >= 5000
+    ? installPollIntervalMsFromEnv
+    : 5000;
+const statusPollIntervalMsFromEnv = Number(
+  process.env.NEXT_PUBLIC_PLUGIN_STATUS_POLL_INTERVAL_MS ?? 5000,
+);
+const STATUS_POLL_INTERVAL_MS =
+  Number.isFinite(statusPollIntervalMsFromEnv) && statusPollIntervalMsFromEnv >= 5000
+    ? statusPollIntervalMsFromEnv
+    : 5000;
+const INSTALL_SUCCESS_ANIMATION_MS = Number(
+  process.env.NEXT_PUBLIC_INSTALL_SUCCESS_ANIMATION_MS ?? 1800,
+);
+
 export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspaceProps) {
+  const completionTimerRef = useRef<number | null>(null);
+  const lastStatusPollAtRef = useRef(0);
   const [items, setItems] = useState(initialItems);
+  const [pendingInstalls, setPendingInstalls] = useState<PendingInstallCard[]>([]);
+  const [pendingReady, setPendingReady] = useState(false);
   const [selectedPluginId, setSelectedPluginId] = useState("");
   const [query, setQuery] = useState("");
   const [statusById, setStatusById] = useState<Record<string, PluginContainerStatus>>({});
@@ -84,6 +147,7 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
   const [installOpen, setInstallOpen] = useState(false);
   const [installImage, setInstallImage] = useState("");
   const [installBusy, setInstallBusy] = useState(false);
+  const closeInstallModal = useCallback(() => setInstallOpen(false), []);
 
   const selected = useMemo(
     () => items.find((item) => item.plugin.id === selectedPluginId) ?? null,
@@ -108,13 +172,35 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
     });
   }, [items, query, statusById]);
 
+  const visiblePendingInstalls = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return pendingInstalls;
+    return pendingInstalls.filter((entry) =>
+      [entry.image, entry.pluginId ?? "", entry.status].join(" ").toLowerCase().includes(normalized),
+    );
+  }, [pendingInstalls, query]);
+
+  const activeInstallPollingKey = useMemo(
+    () =>
+      pendingInstalls
+        .filter((entry) => entry.status === "queued" || entry.status === "running")
+        .map((entry) => `${entry.localId}:${entry.jobId}:${entry.status}`)
+        .join("|"),
+    [pendingInstalls],
+  );
+
   const logLines = useMemo(() => {
     const normalized = logsQuery.trim().toLowerCase();
     if (!normalized) return logs;
     return logs.filter((line) => line.toLowerCase().includes(normalized));
   }, [logs, logsQuery]);
 
-  const loadStatus = async () => {
+  const loadStatus = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastStatusPollAtRef.current < STATUS_POLL_INTERVAL_MS) {
+      return;
+    }
+    lastStatusPollAtRef.current = now;
     const ids = items.map((item) => item.plugin.id).join(",");
     if (!ids) return;
     const response = await fetch(`/api/runner/status?ids=${encodeURIComponent(ids)}`, {
@@ -149,10 +235,10 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
   };
 
   useEffect(() => {
-    void loadStatus();
+    void loadStatus(true);
     const timer = window.setInterval(() => {
-      void loadStatus();
-    }, 5000);
+      void loadStatus(false);
+    }, STATUS_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [items]);
 
@@ -165,6 +251,141 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
     }, 3000);
     return () => window.clearInterval(timer);
   }, [selectedPluginId, tab, liveTail]);
+
+  useEffect(() => {
+    let active = true;
+    const boot = async () => {
+      try {
+        const entries = await loadPendingInstallsFromStore();
+        if (!active) return;
+        setPendingInstalls(entries);
+      } finally {
+        if (active) {
+          setPendingReady(true);
+        }
+      }
+    };
+    void boot();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingReady) return;
+    const timer = window.setTimeout(() => {
+      void savePendingInstallsToStore(pendingInstalls);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [pendingInstalls, pendingReady]);
+
+  useEffect(() => {
+    return () => {
+      if (completionTimerRef.current) {
+        window.clearTimeout(completionTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingReady || completionTimerRef.current) {
+      return;
+    }
+    const hasSucceeded = pendingInstalls.some((entry) => entry.status === "succeeded");
+    if (!hasSucceeded) {
+      return;
+    }
+
+    setStatusMessage("Plugin installed. Finalizing setup...");
+    completionTimerRef.current = window.setTimeout(() => {
+      completionTimerRef.current = null;
+      void (async () => {
+        const persisted = await loadPendingInstallsFromStore();
+        const remaining = persisted.filter((entry) => entry.status !== "succeeded");
+        await savePendingInstallsToStore(remaining);
+        setPendingInstalls(remaining);
+        window.location.reload();
+      })();
+    }, INSTALL_SUCCESS_ANIMATION_MS);
+  }, [pendingInstalls, pendingReady]);
+
+  useEffect(() => {
+    if (!pendingReady) {
+      return;
+    }
+    const active = pendingInstalls.filter(
+      (entry) => entry.status === "queued" || entry.status === "running",
+    );
+    if (!active.length) {
+      return;
+    }
+
+    let cancelled = false;
+    const tick = async () => {
+      const updates = await Promise.all(
+        active.map(async (entry) => ({
+          entry,
+          result: await pollInstallJob(entry.jobId),
+        })),
+      );
+
+      if (cancelled) return;
+
+      setPendingInstalls((previous) => {
+        const next: PendingInstallCard[] = [];
+        for (const entry of previous) {
+          const update = updates.find((item) => item.entry.localId === entry.localId);
+          if (!update) {
+            next.push(entry);
+            continue;
+          }
+
+          const { result } = update;
+          if (!result.ok || !result.data) {
+            next.push({
+              ...entry,
+              status: "failed",
+              progress: 100,
+              phase: "failed",
+              message: "Failed to retrieve install job status.",
+              error: result.message ?? "Failed to poll install job status.",
+              showError: true,
+            });
+            continue;
+          }
+
+          const job = result.data;
+          const pluginId = job.result?.id ?? job.payload?.pluginId ?? entry.pluginId;
+          next.push({
+            ...entry,
+            status: job.status,
+            phase: job.phase ?? entry.phase,
+            progress:
+              typeof job.progress === "number"
+                ? clampProgress(job.progress)
+                : job.status === "failed"
+                  ? 100
+                  : entry.progress,
+            message: job.message ?? entry.message,
+            pluginId,
+            error: job.error ?? undefined,
+            showError: job.status === "failed" ? entry.showError ?? true : entry.showError,
+          });
+        }
+        return next;
+      });
+    };
+
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, INSTALL_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [pendingReady, activeInstallPollingKey]);
 
   const setEnabled = async (pluginId: string, enabled: boolean) => {
     await withLoader(
@@ -194,6 +415,147 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
     return (await response.json()) as RunnerApiResponse<unknown>;
   };
 
+  const fetchManifest = async (pluginId: string): Promise<PluginManifest | null> => {
+    try {
+      const response = await fetch(
+        `/api/plugins/${encodeURIComponent(pluginId)}/proxy/api/plugin-manifest`,
+        {
+          cache: "no-store",
+        },
+      );
+      if (!response.ok) {
+        return null;
+      }
+      return (await response.json()) as PluginManifest;
+    } catch {
+      return null;
+    }
+  };
+
+  const refreshRegistryItems = async () => {
+    const response = await fetch("/api/plugins/registry", { cache: "no-store" });
+    const payload = (await response.json()) as RunnerApiResponse<{ plugins: PluginRegistryEntry[] }>;
+    if (!response.ok || !payload?.data?.plugins) {
+      return false;
+    }
+    const nextItems = await Promise.all(
+      payload.data.plugins.map(async (plugin) => ({
+        plugin,
+        manifest: await fetchManifest(plugin.id),
+      })),
+    );
+    setItems(nextItems);
+    return true;
+  };
+
+  const pollInstallJob = async (jobId: string) => {
+    const response = await fetch(`/api/runner/jobs/${encodeURIComponent(jobId)}`, {
+      cache: "no-store",
+    });
+    return (await response.json()) as RunnerApiResponse<InstallJobData>;
+  };
+
+  const loadPendingInstallsFromStore = async () => {
+    const response = await fetch("/api/runner/pending-installs", { cache: "no-store" });
+    const payload = (await response.json()) as RunnerApiResponse<{
+      entries?: PendingInstallCard[];
+    }>;
+    if (!response.ok || !payload.ok || !payload.data?.entries) {
+      return [];
+    }
+    return payload.data.entries;
+  };
+
+  const savePendingInstallsToStore = async (entries: PendingInstallCard[]) => {
+    await fetch("/api/runner/pending-installs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entries }),
+    });
+  };
+
+  const enqueueInstallFromImage = async (image: string) => {
+    const payload = await callRunnerAction("install", { image });
+    if (!payload.ok || !payload.data) {
+      throw new Error(payload.message ?? "Failed to queue plugin install.");
+    }
+    const data = payload.data as {
+      jobId?: string;
+      status?: "queued" | "running" | "succeeded" | "failed";
+      phase?: string;
+      progress?: number;
+      message?: string;
+    };
+    if (!data.jobId) {
+      throw new Error("Runner accepted install but did not return job id.");
+    }
+    const jobId = data.jobId;
+    const localId = `${jobId}-${Date.now()}`;
+    const now = new Date().toISOString();
+    setPendingInstalls((prev) => [
+      {
+        localId,
+        jobId,
+        image,
+        status: data.status ?? "queued",
+        phase: data.phase,
+        progress: typeof data.progress === "number" ? clampProgress(data.progress) : 0,
+        message: data.message,
+        createdAt: now,
+        updatedAt: now,
+      },
+      ...prev,
+    ]);
+    return jobId;
+  };
+
+  const toggleInstallError = (localId: string) => {
+    setPendingInstalls((prev) =>
+      prev.map((entry) =>
+        entry.localId === localId
+          ? { ...entry, showError: !entry.showError }
+          : entry,
+      ),
+    );
+  };
+
+  const dismissInstallCard = (localId: string) => {
+    setPendingInstalls((prev) => prev.filter((entry) => entry.localId !== localId));
+  };
+
+  const retryInstallCard = async (localId: string) => {
+    const card = pendingInstalls.find((entry) => entry.localId === localId);
+    if (!card) {
+      return;
+    }
+    setPendingInstalls((prev) => prev.filter((entry) => entry.localId !== localId));
+    try {
+      await enqueueInstallFromImage(card.image);
+      setStatusMessage("Install retried.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Failed to retry install.");
+    }
+  };
+
+  const removeInstallCardPlugin = async (localId: string) => {
+    const card = pendingInstalls.find((entry) => entry.localId === localId);
+    if (!card?.pluginId) {
+      return;
+    }
+    try {
+      const payload = await callRunnerAction("remove", { id: card.pluginId });
+      if (!payload.ok) {
+        throw new Error(payload.message ?? "Failed to remove plugin container.");
+      }
+      setPendingInstalls((prev) => prev.filter((entry) => entry.localId !== localId));
+      await refreshRegistryItems();
+      await loadStatus(true);
+      setStatusMessage("Failed install artifacts removed.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Failed to remove plugin.");
+    }
+  };
+
   const handleStart = async () => {
     if (!selected) return;
     setIsBusy(true);
@@ -205,7 +567,7 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
           throw new Error(payload.message ?? "Failed to start plugin.");
         }
         await setEnabled(selected.plugin.id, true);
-        await loadStatus();
+        await loadStatus(true);
       }, "Starting plugin...");
       setStatusMessage("Plugin started and enabled.");
     } catch (error) {
@@ -226,7 +588,7 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
           throw new Error(payload.message ?? "Failed to stop plugin.");
         }
         await setEnabled(selected.plugin.id, false);
-        await loadStatus();
+        await loadStatus(true);
       }, "Stopping plugin...");
       setStatusMessage("Plugin stopped and disabled.");
     } catch (error) {
@@ -259,17 +621,13 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
     setInstallBusy(true);
     setStatusMessage(null);
     try {
-      await withLoader(async () => {
-        const payload = await callRunnerAction("install", { image: installImage.trim() });
-        if (!payload.ok) {
-          throw new Error(payload.message ?? "Failed to install plugin.");
-        }
-      }, "Installing plugin from image...");
-      setInstallOpen(false);
+      await enqueueInstallFromImage(installImage.trim());
+      closeInstallModal();
       setInstallImage("");
-      window.location.reload();
+      setStatusMessage("Install queued. Tracking progress...");
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Failed to install plugin.");
+      setStatusMessage(error instanceof Error ? error.message : "Failed to queue install.");
+    } finally {
       setInstallBusy(false);
     }
   };
@@ -297,13 +655,146 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
               aria-label="Filter plugins"
               className="h-9"
             />
-            <Button variant="outline" tone="neutral" onClick={() => void loadStatus()}>
+            <Button variant="outline" tone="neutral" onClick={() => void loadStatus(true)}>
               <span className="material-symbols-outlined text-[18px]">refresh</span>
             </Button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-3">
             <div className="space-y-2">
+              {visiblePendingInstalls.map((entry) => (
+                <div
+                  key={entry.localId}
+                  className={`relative overflow-hidden rounded-xl border px-3 py-3 ${
+                    entry.status === "failed"
+                      ? "border-danger/50 bg-danger/10"
+                      : entry.status === "succeeded"
+                        ? "animate-pulse border-success/50 bg-success/10"
+                        : "border-accent/50 bg-accent/10"
+                  }`}
+                >
+                  <span
+                    className={`absolute inset-y-0 left-0 w-1 rounded-l-xl ${
+                      entry.status === "failed"
+                        ? "bg-danger"
+                        : entry.status === "succeeded"
+                          ? "bg-success"
+                          : "bg-accent"
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-foreground">
+                        {entry.status === "queued" || entry.status === "running" ? (
+                          <InlineSpinner className="h-4 w-4 border-border-subtle border-t-foreground" />
+                        ) : (
+                          <span className="material-symbols-outlined text-[20px]">
+                            {entry.status === "failed" ? "error" : "check_circle"}
+                          </span>
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-foreground">
+                          {entry.pluginId ? `Plugin ${entry.pluginId}` : "Importing plugin"}
+                        </div>
+                        <div className="truncate text-xs text-subtle">{entry.image}</div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {entry.message ?? fallbackInstallMessage(entry.status)}
+                        </div>
+                        <div className="mt-2">
+                          <div className="mb-1 flex items-center justify-between text-[10px] text-subtle">
+                            <span className="truncate uppercase tracking-wider">{entry.phase ?? "queued"}</span>
+                            <span>{clampProgress(entry.progress)}%</span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-surface-3/80">
+                            <div
+                              className={`h-full rounded-full transition-all duration-300 ${
+                                entry.status === "failed"
+                                  ? "bg-danger"
+                                  : entry.status === "succeeded"
+                                    ? "bg-success"
+                                    : "bg-accent"
+                              }`}
+                              style={{ width: `${clampProgress(entry.progress)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                        entry.status === "failed"
+                          ? "border-danger/50 bg-danger/20 text-danger-foreground"
+                          : entry.status === "succeeded"
+                            ? "border-success/50 bg-success/20 text-success-foreground"
+                            : "border-accent/50 bg-accent/20 text-accent-foreground"
+                      }`}
+                    >
+                      {entry.status.toUpperCase()}
+                    </span>
+                  </div>
+
+                  {entry.status === "failed" ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="outline"
+                        tone="neutral"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => void retryInstallCard(entry.localId)}
+                      >
+                        Retry
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        tone="neutral"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => toggleInstallError(entry.localId)}
+                      >
+                        {entry.showError ? "Hide error" : "View error"}
+                      </Button>
+                      {entry.pluginId ? (
+                        <Button
+                          variant="ghost"
+                          tone="danger"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => void removeInstallCardPlugin(entry.localId)}
+                        >
+                          Remove
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="ghost"
+                        tone="neutral"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => dismissInstallCard(entry.localId)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {entry.status === "succeeded" ? (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        tone="neutral"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => dismissInstallCard(entry.localId)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {entry.status === "failed" && entry.showError && entry.error ? (
+                    <div className="mt-2 rounded-md border border-danger/40 bg-surface px-2 py-2 text-xs text-danger">
+                      {entry.error}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+
               {filteredItems.map((item) => {
                 const selectedRow = selectedPluginId === item.plugin.id;
                 const runtime = statusById[item.plugin.id];
@@ -538,12 +1029,12 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
 
       <Modal
         open={installOpen}
-        onClose={() => setInstallOpen(false)}
+        onClose={closeInstallModal}
         title="Install Plugin"
         description="Register a plugin by Docker image. Runner resolves metadata from plugin manifest."
         footer={
           <div className="flex items-center justify-end gap-2">
-            <Button variant="outline" tone="neutral" onClick={() => setInstallOpen(false)}>
+            <Button variant="outline" tone="neutral" onClick={closeInstallModal}>
               Cancel
             </Button>
             <Button variant="solid" tone="primary" onClick={() => void handleInstall()} disabled={installBusy || !installImage.trim()}>
