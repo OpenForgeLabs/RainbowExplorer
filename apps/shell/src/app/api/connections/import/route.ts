@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { importConnections } from "@openforgelabs/rainbow-connections";
+import { appendActivityEvent } from "@/lib/activityLog";
 
 type ApiResponse<T> = {
   isSuccess: boolean;
@@ -24,6 +25,15 @@ export async function POST(request: NextRequest) {
     const mode = body?.mode === "replace" ? "replace" : "merge";
     const typedStore = store as Parameters<typeof importConnections>[0];
     await importConnections(typedStore, mode);
+
+    await appendActivityEvent({
+      category: "connections",
+      action: "import",
+      status: "success",
+      message: "Connections imported.",
+      metadata: { mode },
+    });
+
     const response: ApiResponse<null> = {
       isSuccess: true,
       message: "Connections imported.",
@@ -32,6 +42,14 @@ export async function POST(request: NextRequest) {
     };
     return NextResponse.json(response);
   } catch (error) {
+    await appendActivityEvent({
+      category: "connections",
+      action: "import",
+      status: "error",
+      message: "Failed to import connections.",
+      metadata: { reason: error instanceof Error ? error.message : "Unknown error" },
+    });
+
     const response: ApiResponse<null> = {
       isSuccess: false,
       message: "Failed to import connections.",

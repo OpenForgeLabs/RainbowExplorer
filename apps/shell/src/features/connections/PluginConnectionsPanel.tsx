@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Card, InlineSpinner, Select, SelectWithIcon } from "@openforgelabs/rainbow-ui";
+import { Button, Card, InlineSpinner, Modal, SearchInput } from "@openforgelabs/rainbow-ui";
 import type { PluginManifest } from "@openforgelabs/rainbow-contracts";
 import type { PluginRegistryEntry } from "@/lib/pluginRegistry";
 import { PluginConnectionModal } from "@/features/connections/PluginConnectionModal";
+import { useGlobalLoader } from "@/lib/globalLoader";
 
 type RegistryResponse = {
   plugins: PluginRegistryEntry[];
@@ -61,53 +62,56 @@ const resolveSummaryEndpoint = (
 };
 
 export function PluginConnectionsPanel() {
+  const { withLoader } = useGlobalLoader();
   const [plugins, setPlugins] = useState<PluginWithManifest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activePlugin, setActivePlugin] = useState<PluginWithManifest | null>(null);
+  const [addPickerOpen, setAddPickerOpen] = useState(false);
+  const [addPickerSelection, setAddPickerSelection] = useState("");
   const [editValues, setEditValues] = useState<
     Record<string, string | number | boolean | null> | null
   >(null);
   const [filter, setFilter] = useState<string>("all");
-  const [addTarget, setAddTarget] = useState<string>("");
+  const [query, setQuery] = useState("");
+  const [selectedConnectionKey, setSelectedConnectionKey] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadPlugins = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const registryResponse = await fetch("/api/plugins/registry", {
-        cache: "no-store",
-      });
-      const registryData = (await registryResponse.json()) as RegistryResponse;
-      const entries = (registryData.plugins ?? []).filter(
-        (plugin) => plugin.enabled !== false,
-      );
+      const manifests = await withLoader(async () => {
+        const registryResponse = await fetch("/api/plugins/registry", {
+          cache: "no-store",
+        });
+        const registryData = (await registryResponse.json()) as RegistryResponse;
+        const entries = (registryData.plugins ?? []).filter(
+          (plugin) => plugin.enabled !== false,
+        );
 
-      const manifests = await Promise.all(
-        entries.map(async (entry) => {
-          const response = await fetch(
-            `/api/plugins/${entry.id}/proxy/api/plugin-manifest`,
-            { cache: "no-store" },
-          );
-          const manifest = (await response.json()) as PluginManifest;
-          return { registry: entry, manifest };
-        }),
-      );
+        return Promise.all(
+          entries.map(async (entry) => {
+            const response = await fetch(
+              `/api/plugins/${entry.id}/proxy/api/plugin-manifest`,
+              { cache: "no-store" },
+            );
+            const manifest = (await response.json()) as PluginManifest;
+            return { registry: entry, manifest };
+          }),
+        );
+      }, "Loading plugin manifests...");
 
       setPlugins(manifests);
-      if (!addTarget && manifests.length > 0) {
-        setAddTarget(manifests[0].manifest.id);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load plugins.");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [withLoader]);
 
   useEffect(() => {
-    loadPlugins();
+    void loadPlugins();
   }, [loadPlugins]);
 
   const connections = useMemo(() => {
@@ -128,11 +132,26 @@ export function PluginConnectionsPanel() {
   }, [plugins]);
 
   const filteredConnections = useMemo(() => {
-    if (filter === "all") {
-      return connections;
-    }
-    return connections.filter((item) => item.pluginId === filter);
-  }, [connections, filter]);
+    const normalizedQuery = query.trim().toLowerCase();
+    return connections.filter((item) => {
+      if (filter !== "all" && item.pluginId !== filter) {
+        return false;
+      }
+      if (!normalizedQuery) {
+        return true;
+      }
+      const hay = [
+        item.connectionName,
+        item.pluginName,
+        item.pluginId,
+        item.host ?? "",
+        item.environment ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(normalizedQuery);
+    });
+  }, [connections, filter, query]);
 
   const fetchConnections = useCallback(async () => {
     const updates = await Promise.all(
@@ -161,7 +180,10 @@ export function PluginConnectionsPanel() {
   }, [plugins.length]);
 
   const handleExport = async () => {
-    const response = await fetch("/api/connections/export", { cache: "no-store" });
+    const response = await withLoader(
+      async () => fetch("/api/connections/export", { cache: "no-store" }),
+      "Exporting connections...",
+    );
     const data = await response.json();
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: "application/json",
@@ -177,26 +199,32 @@ export function PluginConnectionsPanel() {
   const handleImport = async (file: File) => {
     const text = await file.text();
     const store = JSON.parse(text);
-    await fetch("/api/connections/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ store, mode: "merge" }),
-    });
+    await withLoader(
+      async () =>
+        fetch("/api/connections/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ store, mode: "merge" }),
+        }),
+      "Importing connections...",
+    );
     await fetchConnections();
   };
 
-  const activePluginManifest = useMemo(
-    () => plugins.find((plugin) => plugin.manifest.id === addTarget),
-    [addTarget, plugins],
-  );
+  const technologyCount = plugins.length;
+  const healthyCount = connections.length;
 
   const handleEdit = async (connection: ConnectionCard) => {
     try {
-      const response = await fetch(
-        `/api/connections/${connection.pluginId}/${encodeURIComponent(
-          connection.connectionName,
-        )}/resolve`,
-        { cache: "no-store" },
+      const response = await withLoader(
+        async () =>
+          fetch(
+            `/api/connections/${connection.pluginId}/${encodeURIComponent(
+              connection.connectionName,
+            )}/resolve`,
+            { cache: "no-store" },
+          ),
+        "Resolving connection...",
       );
       const data = await response.json();
       if (!data?.isSuccess || !data?.data) {
@@ -206,77 +234,97 @@ export function PluginConnectionsPanel() {
       setActivePlugin(
         plugins.find((plugin) => plugin.manifest.id === connection.pluginId) ?? null,
       );
+      setSelectedConnectionKey(`${connection.pluginId}-${connection.connectionName}`);
     } catch {
       return;
     }
   };
 
+  const openAddPicker = () => {
+    setAddPickerSelection("");
+    setAddPickerOpen(true);
+  };
+
+  const handleConfirmAddTechnology = () => {
+    if (!addPickerSelection) {
+      return;
+    }
+    const target = plugins.find((plugin) => plugin.manifest.id === addPickerSelection);
+    if (!target) {
+      return;
+    }
+    setEditValues(null);
+    setActivePlugin(target);
+    setAddPickerOpen(false);
+  };
+
   return (
-    <section className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground">
-            Resource Connections
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            All connections in one place. Filter by technology and manage exports.
-          </p>
+    <section className="flex flex-col gap-4">
+      <header className="rounded-xl border border-border bg-surface px-4 py-4 shadow-[var(--rx-shadow-xs)]">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Resource Connections</h2>
+            <p className="text-sm text-muted-foreground">
+              Monitor, manage and open your infrastructure connections from one place.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center rounded-lg border border-border bg-surface-2 p-1">
+              <Button
+                variant="ghost"
+                tone="neutral"
+                className="h-8 px-3 text-xs"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <span className="material-symbols-outlined text-[16px]">download</span>
+                Import
+              </Button>
+              <Button variant="ghost" tone="neutral" className="h-8 px-3 text-xs" onClick={handleExport}>
+                <span className="material-symbols-outlined text-[16px]">upload</span>
+                Export
+              </Button>
+            </div>
+            <Button onClick={openAddPicker} variant="solid" tone="primary">
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              Add Connection
+            </Button>
+            <Button variant="outline" tone="neutral" onClick={loadPlugins}>
+              Refresh
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SelectWithIcon
-            aria-label="Filter technologies"
-            icon="filter_list"
-            wrapperClassName="h-10 px-3"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          >
-            <option value="all">All technologies</option>
-            {plugins.map((plugin) => (
-              <option key={plugin.manifest.id} value={plugin.manifest.id}>
-                {plugin.manifest.name}
-              </option>
-            ))}
-          </SelectWithIcon>
-          <Select
-            className="h-10 min-w-[120px] text-sm"
-            value={addTarget}
-            onChange={(event) => setAddTarget(event.target.value)}
-          >
-            {plugins.map((plugin) => (
-              <option key={plugin.manifest.id} value={plugin.manifest.id}>
-                Add: {plugin.manifest.name}
-              </option>
-            ))}
-          </Select>
-          <Button
-            onClick={() => {
-              if (activePluginManifest) {
-                setEditValues(null);
-                setActivePlugin(activePluginManifest);
-              }
-            }}
-            variant="solid" tone="primary"
-          >
-            Add Connection
-          </Button>
-          <Button variant="solid" tone="accent" onClick={handleExport}>
-            <span className="material-symbols-outlined text-[18px]">
-              upload
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="grid min-w-0 flex-1 gap-2 md:grid-cols-[1fr_220px]">
+            <SearchInput
+              aria-label="Filter connections"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Filter by name, host or technology..."
+            />
+            <select
+              className="ui-focus h-10 rounded-[var(--rx-radius-md)] border border-border bg-control px-3 text-sm text-foreground"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            >
+              <option value="all">All technologies</option>
+              {plugins.map((plugin) => (
+                <option key={plugin.manifest.id} value={plugin.manifest.id}>
+                  {plugin.manifest.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-subtle">
+            <span className="inline-flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-success" />
+              {healthyCount} configured
             </span>
-            Export
-          </Button>
-          <Button
-            variant="solid" tone="accent"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              download
+            <span className="inline-flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-primary" />
+              {technologyCount} technologies
             </span>
-            Import
-          </Button>
-          <Button variant="outline" tone="neutral" onClick={loadPlugins}>
-            Refresh
-          </Button>
+          </div>
         </div>
       </header>
 
@@ -294,11 +342,13 @@ export function PluginConnectionsPanel() {
           </div>
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {filteredConnections.map((connection) => (
             <ConnectionCardView
               key={`${connection.pluginId}-${connection.connectionName}`}
               connection={connection}
+              selected={selectedConnectionKey === `${connection.pluginId}-${connection.connectionName}`}
+              onOpen={() => setSelectedConnectionKey(`${connection.pluginId}-${connection.connectionName}`)}
               onEdit={() => handleEdit(connection)}
             />
           ))}
@@ -334,15 +384,75 @@ export function PluginConnectionsPanel() {
           initialValues={editValues ?? undefined}
         />
       ) : null}
+
+      <Modal
+        open={addPickerOpen}
+        onClose={() => setAddPickerOpen(false)}
+        title="Add Connection"
+        description="Choose the technology first, then configure its connection fields."
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="outline" tone="neutral" onClick={() => setAddPickerOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="solid"
+              tone="primary"
+              onClick={handleConfirmAddTechnology}
+              disabled={!addPickerSelection}
+            >
+              Continue
+            </Button>
+          </div>
+        }
+      >
+        <div className="grid gap-2">
+          {plugins.map((plugin) => {
+            const selectedTech = addPickerSelection === plugin.manifest.id;
+            return (
+              <button
+                key={plugin.manifest.id}
+                type="button"
+                className={`ui-focus relative rounded-xl border px-3 py-3 text-left transition ${
+                  selectedTech
+                    ? "border-primary bg-primary/10 shadow-[var(--rx-shadow-xs)]"
+                    : "border-border bg-surface hover:border-primary/40"
+                }`}
+                onClick={() => setAddPickerSelection(plugin.manifest.id)}
+              >
+                <span
+                  className={`absolute inset-y-0 left-0 w-1 rounded-l-xl ${
+                    selectedTech ? "bg-primary" : "bg-transparent"
+                  }`}
+                  aria-hidden="true"
+                />
+                <div className="flex items-center gap-3">
+                  <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-2 text-primary">
+                    <span className="material-symbols-outlined text-[18px]">extension</span>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">{plugin.manifest.name}</div>
+                    <div className="text-xs uppercase tracking-widest text-subtle">{plugin.manifest.id}</div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </Modal>
     </section>
   );
 }
 
 function ConnectionCardView({
   connection,
+  selected,
+  onOpen,
   onEdit,
 }: {
   connection: ConnectionCard;
+  selected: boolean;
+  onOpen: () => void;
   onEdit: () => void;
 }) {
   const tagClassesByPlugin: Record<string, string> = {
@@ -355,6 +465,15 @@ function ConnectionCardView({
     null,
   );
   const [summaryError, setSummaryError] = useState(false);
+  const summaryEntries = useMemo(() => {
+    if (!summary) {
+      return [];
+    }
+    return Object.entries(summary).filter(([, value]) => {
+      const valueType = typeof value;
+      return valueType === "string" || valueType === "number" || valueType === "boolean";
+    });
+  }, [summary]);
 
   useEffect(() => {
     const endpoint = resolveSummaryEndpoint(
@@ -389,12 +508,22 @@ function ConnectionCardView({
   }, [connection.connectionName, connection.manifest, connection.pluginId]);
 
   return (
-    <Card className="overflow-hidden">
-      <div className="flex h-80 flex-col">
-        <div className="flex min-h-[20%] items-start justify-between gap-2 px-2 pb-1.5 pt-2.5">
+    <Card
+      className={`relative overflow-hidden rounded-xl border transition ${
+        selected
+          ? "border-primary/70 bg-primary/10 shadow-[var(--rx-shadow-sm)]"
+          : "border-border bg-surface hover:-translate-y-0.5 hover:border-primary/40 hover:bg-surface-2"
+      }`}
+    >
+      <span
+        className={`absolute inset-x-0 top-0 h-1 ${selected ? "bg-primary" : "bg-transparent"}`}
+        aria-hidden="true"
+      />
+      <div className="flex h-[22rem] flex-col p-4">
+        <div className="mb-3 flex items-start justify-between gap-2">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-3 text-accent">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface-3 text-accent">
                 <span className="material-symbols-outlined text-[20px]">
                   {connection.icon}
                 </span>
@@ -402,10 +531,6 @@ function ConnectionCardView({
               <div>
                 <div className="text-base font-semibold text-foreground">
                   {connection.connectionName}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {connection.environment ?? "development"} ·{" "}
-                  {connection.useTls ? "TLS" : "Plain"}
                 </div>
               </div>
             </div>
@@ -416,76 +541,69 @@ function ConnectionCardView({
             {connection.pluginName}
           </span>
         </div>
-        <div className="px-2 text-xs text-muted-foreground">
-          {connection.host
-            ? `${connection.host}${connection.port ? `:${connection.port}` : ""}`
-            : "Host not provided"}
+
+        <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded border border-border bg-surface-3 px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary">
+            {connection.environment ?? "dev"}
+          </span>
         </div>
-        <div className="flex min-h-[60%] flex-1 flex-col px-2 py-1.5">
+
+        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-surface-2/80 p-2">
           {connection.manifest.connections.summaryEndpoint ? (
-            <div className="max-h-full flex-1 overflow-y-auto rounded-lg border border-border-strong/40 bg-surface-2 p-1.5 text-xs text-muted-foreground">
-              {summary ? (
-                <div className="grid gap-2">
-                  {summary.version ? (
-                    <div className="flex items-center justify-between">
-                      <span className="text-subtle">Version</span>
-                      <span className="font-semibold">{summary.version}</span>
+            summary ? (
+              summaryEntries.length > 0 ? (
+                <div className="custom-scrollbar grid h-full gap-1 overflow-y-auto overflow-x-hidden pb-1 pr-1">
+                  {summaryEntries.map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="flex min-w-0 items-center justify-between gap-2 overflow-hidden rounded-md border border-border-subtle/60 bg-surface px-2 py-1"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-[10px] uppercase tracking-widest text-subtle">
+                        {key}
+                      </span>
+                      <span className="max-w-[45%] truncate text-right font-mono text-[11px] text-foreground">
+                        {String(value)}
+                      </span>
                     </div>
-                  ) : null}
-                  {summary.usedMemoryHuman ? (
-                    <div className="flex items-center justify-between">
-                      <span className="text-subtle">Memory</span>
-                      <span className="font-semibold">{summary.usedMemoryHuman}</span>
-                    </div>
-                  ) : null}
-                  {typeof summary.connectedClients === "number" ? (
-                    <div className="flex items-center justify-between">
-                      <span className="text-subtle">Clients</span>
-                      <span className="font-semibold">{summary.connectedClients}</span>
-                    </div>
-                  ) : null}
-                  {typeof summary.opsPerSec === "number" ? (
-                    <div className="flex items-center justify-between">
-                      <span className="text-subtle">Ops/sec</span>
-                      <span className="font-semibold">{summary.opsPerSec}</span>
-                    </div>
-                  ) : null}
-                </div>
-              ) : summaryError ? (
-                <div className="flex h-full items-center justify-center text-danger">
-                  Summary unavailable
+                  ))}
                 </div>
               ) : (
-                <div className="flex h-full items-center justify-center text-subtle">
-                  Loading summary…
+                <div className="flex h-full items-center justify-center text-xs text-subtle">
+                  Summary has no scalar values.
                 </div>
-              )}
-            </div>
+              )
+            ) : summaryError ? (
+              <div className="flex h-full items-center justify-center text-xs text-danger">
+                Summary unavailable
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-subtle">
+                Loading summary…
+              </div>
+            )
           ) : (
-            <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border-subtle/60 bg-surface-2 text-xs text-subtle">
+            <div className="flex h-full items-center justify-center text-xs text-subtle">
               No summary available for this plugin.
             </div>
           )}
         </div>
-        <div className="mt-auto flex min-h-[20%] flex-wrap items-center justify-between gap-2 px-2 pb-2.5 pt-1.5">
-          <div className="flex items-center gap-2">
+        <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
             <a
-              className="rounded-lg border border-transparent bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-[var(--rx-shadow-sm)] transition hover:bg-primary-hover"
+              onClick={onOpen}
+              className="flex-1 rounded-lg border border-transparent bg-primary px-3 py-2 text-center text-xs font-semibold text-primary-foreground shadow-[var(--rx-shadow-sm)] transition hover:bg-primary-hover"
               href={openRoute(connection.manifest, connection.connectionName)}
             >
-              Open
+              Open Connection
             </a>
             <button
               type="button"
               onClick={onEdit}
-              className="rounded-lg border border-transparent bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground shadow-[var(--rx-shadow-sm)] transition hover:bg-accent-hover"
+              className="ui-focus inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-2 text-subtle transition hover:bg-surface-3 hover:text-foreground"
+              aria-label="Edit connection"
+              title="Edit connection"
             >
-              Edit
+              <span className="material-symbols-outlined text-[18px]">edit</span>
             </button>
-          </div>
-          <span className="text-[10px] uppercase tracking-widest text-subtle">
-            {connection.pluginId}
-          </span>
         </div>
       </div>
     </Card>

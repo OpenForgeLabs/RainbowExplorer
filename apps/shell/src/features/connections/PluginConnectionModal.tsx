@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button, Modal, useToast } from "@openforgelabs/rainbow-ui";
-import type { PluginManifest } from "@openforgelabs/rainbow-contracts";
+import type { FieldDefinition, PluginManifest } from "@openforgelabs/rainbow-contracts";
 import { FieldRenderer } from "@/features/connections/FieldRenderer";
+import { useGlobalLoader } from "@/lib/globalLoader";
 
 type PluginConnectionModalProps = {
   open: boolean;
@@ -19,6 +20,27 @@ type StatusState = {
 };
 
 const defaultStatus: StatusState = { state: "idle", message: "" };
+const shellConnectionFields: FieldDefinition[] = [
+  {
+    id: "name",
+    label: "Display Name",
+    type: "text",
+    placeholder: "e.g. Production Redis Cache",
+    required: true,
+  },
+  {
+    id: "environment",
+    label: "Environment",
+    type: "select",
+    required: true,
+    defaultValue: "development",
+    options: [
+      { label: "development", value: "development" },
+      { label: "staging", value: "staging" },
+      { label: "production", value: "production" },
+    ],
+  },
+];
 
 export function PluginConnectionModal({
   open,
@@ -31,7 +53,18 @@ export function PluginConnectionModal({
   const [values, setValues] = useState<Record<string, string | number | boolean | null>>({});
   const [testStatus, setTestStatus] = useState<StatusState>(defaultStatus);
   const [saveStatus, setSaveStatus] = useState<StatusState>(defaultStatus);
-  const fields = plugin.connections.schema.fields;
+  const { withLoader } = useGlobalLoader();
+  const fields = useMemo(() => {
+    const pluginFields = plugin.connections.schema.fields;
+    const merged = [...shellConnectionFields];
+    for (const field of pluginFields) {
+      if (merged.some((candidate) => candidate.id === field.id)) {
+        continue;
+      }
+      merged.push(field);
+    }
+    return merged;
+  }, [plugin.connections.schema.fields]);
 
   useEffect(() => {
     if (!open) {
@@ -55,6 +88,27 @@ export function PluginConnectionModal({
     const nameValue = values.name;
     return typeof nameValue === "string" && nameValue.trim().length > 0;
   }, [values.name]);
+  const missingRequiredField = useMemo(() => {
+    for (const field of fields) {
+      if (!field.required) {
+        continue;
+      }
+      const raw = values[field.id];
+      if (field.type === "checkbox") {
+        if (typeof raw !== "boolean") {
+          return field;
+        }
+        continue;
+      }
+      if (raw === null || raw === undefined) {
+        return field;
+      }
+      if (typeof raw === "string" && raw.trim().length === 0) {
+        return field;
+      }
+    }
+    return null;
+  }, [fields, values]);
 
   const requestBody = useMemo(() => ({ ...values }), [values]);
 
@@ -93,8 +147,21 @@ export function PluginConnectionModal({
       });
       return;
     }
+    if (missingRequiredField) {
+      const message = `${missingRequiredField.label} is required to test the connection.`;
+      setTestStatus({ state: "error", message });
+      pushToast({
+        title: "Missing required field",
+        message,
+        variant: "error",
+      });
+      return;
+    }
 
-    const { ok, data } = await request("test", "POST");
+    const { ok, data } = await withLoader(
+      async () => request("test", "POST"),
+      "Testing connection...",
+    );
     if (!ok || !data?.isSuccess) {
       const message =
         data?.reasons?.[0] ?? data?.message ?? "Test connection failed.";
@@ -121,8 +188,17 @@ export function PluginConnectionModal({
       pushToast({ title: "Missing display name", message, variant: "error" });
       return;
     }
+    if (missingRequiredField) {
+      const message = `${missingRequiredField.label} is required.`;
+      setSaveStatus({ state: "error", message });
+      pushToast({ title: "Missing required field", message, variant: "error" });
+      return;
+    }
 
-    const { ok, data } = await request("", "POST");
+    const { ok, data } = await withLoader(
+      async () => request("", "POST"),
+      "Saving connection...",
+    );
     if (!ok || !data?.isSuccess) {
       const message =
         data?.reasons?.[0] ?? data?.message ?? "Failed to save connection.";

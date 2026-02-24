@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPluginById, loadPluginRegistry } from "@/lib/pluginRegistry";
+import { appendActivityEvent } from "@/lib/activityLog";
 
 type ApiResponse<T> = {
   isSuccess: boolean;
@@ -48,8 +49,27 @@ export async function POST(
         data: null,
       };
     }
+
+    await appendActivityEvent({
+      category: "connections",
+      action: "test",
+      target: `${pluginId}:${String(body.name ?? "")}`,
+      status: data.isSuccess ? "success" : "error",
+      message: data.message || "Connection tested.",
+      metadata: { pluginId, isSuccess: data.isSuccess },
+    });
+
     return NextResponse.json(data, { status: testResponse.status });
   } catch (error) {
+    await appendActivityEvent({
+      category: "connections",
+      action: "test",
+      target: pluginId,
+      status: "error",
+      message: "Failed to test connection.",
+      metadata: { reason: error instanceof Error ? error.message : "Unknown error" },
+    });
+
     const response: ApiResponse<null> = {
       isSuccess: false,
       message: "Failed to test connection.",
