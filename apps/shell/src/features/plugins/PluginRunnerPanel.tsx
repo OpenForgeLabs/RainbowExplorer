@@ -26,6 +26,16 @@ type RunnerResponse<T> = {
   data?: T;
 };
 
+type InstallJob = {
+  id: string;
+  type: "install";
+  status: "queued" | "running" | "succeeded" | "failed";
+  createdAt: string;
+  updatedAt: string;
+  result?: { id?: string } | null;
+  error?: string | null;
+};
+
 type PluginRunnerPanelProps = {
   plugins: PluginRegistryEntry[];
 };
@@ -86,13 +96,51 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
     }
   };
 
-  const callRunner = async <T,>(path: string, body?: unknown) => {
+  const callRunner = async <T,>(
+    path: string,
+    body?: unknown,
+    method: "POST" | "GET" = "POST",
+  ) => {
     const response = await fetch(`${runnerUrl}${path}`, {
-      method: "POST",
+      method,
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
     return (await response.json()) as RunnerResponse<T>;
+  };
+
+  const pollInstallJob = async (jobId: string) => {
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      const response = await callRunner<InstallJob>(
+        `/jobs/${encodeURIComponent(jobId)}`,
+        undefined,
+        "GET",
+      );
+
+      if (!response.ok || !response.data) {
+        return { ok: false, message: response.message ?? "Failed to track install job." };
+      }
+
+      const job = response.data;
+      if (job.status === "succeeded") {
+        return {
+          ok: true,
+          message: "Plugin installed from image. Refresh to load it.",
+          pluginId: job.result?.id,
+        };
+      }
+      if (job.status === "failed") {
+        return {
+          ok: false,
+          message: job.error ?? "Plugin installation failed.",
+        };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+
+    return { ok: false, message: "Install is still running. Check status in a moment." };
   };
 
   const handleInstall = async (payload: { image: string }) => {
@@ -100,12 +148,11 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
     setIsInstalling(true);
     setStatus(null);
     try {
-      const response = await withLoader(
-        async () =>
-          callRunner("/plugins/install", {
-            image: payload.image,
-          }),
-        "Installing plugin...",
+      const response = await callRunner<{ jobId?: string; status?: string }>(
+        "/plugins/install",
+        {
+          image: payload.image,
+        },
       );
       if (!response.ok) {
         const message = response.message ?? "Failed to install plugin.";
@@ -113,13 +160,31 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
         await logActivity("install", "error", message, { image: payload.image });
         return;
       }
-      const message = "Plugin installed from image. Refresh to load it.";
-      setStatus(message);
-      await logActivity("install", "success", message, {
-        image: payload.image,
-        pluginId: response.data && (response.data as { id?: string }).id,
-      });
-      setImage("");
+
+      const jobId = response.data?.jobId;
+      if (!jobId) {
+        const message = "Runner accepted install but did not return a job id.";
+        setStatus(message);
+        await logActivity("install", "error", message, { image: payload.image });
+        return;
+      }
+
+      setStatus("Install queued. Waiting for plugin to become available...");
+      const final = await pollInstallJob(jobId);
+      setStatus(final.message);
+      if (final.ok) {
+        await logActivity("install", "success", final.message, {
+          image: payload.image,
+          pluginId: final.pluginId,
+          jobId,
+        });
+        setImage("");
+      } else {
+        await logActivity("install", "error", final.message, {
+          image: payload.image,
+          jobId,
+        });
+      }
     } catch {
       const message = "Runner is not reachable.";
       setStatus(message);
@@ -142,9 +207,9 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
     setBusyId(plugin.id);
     setStatus(null);
     try {
-      const response = await withLoader(
-        async () => callRunner("/plugins/install", { image: pluginImage }),
-        "Updating plugin...",
+      const response = await callRunner<{ jobId?: string }>(
+        "/plugins/install",
+        { image: pluginImage },
       );
       if (!response.ok) {
         const message = response.message ?? "Failed to update plugin.";
@@ -152,9 +217,23 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
         await logActivity("update", "error", message, { pluginId: plugin.id });
         return;
       }
-      const message = "Plugin updated. Refresh to load changes.";
-      setStatus(message);
-      await logActivity("update", "success", message, { pluginId: plugin.id });
+
+      const jobId = response.data?.jobId;
+      if (!jobId) {
+        const message = "Runner accepted update but did not return a job id.";
+        setStatus(message);
+        await logActivity("update", "error", message, { pluginId: plugin.id });
+        return;
+      }
+
+      setStatus("Update queued. Waiting for plugin to become available...");
+      const final = await pollInstallJob(jobId);
+      setStatus(final.message);
+      if (final.ok) {
+        await logActivity("update", "success", final.message, { pluginId: plugin.id, jobId });
+      } else {
+        await logActivity("update", "error", final.message, { pluginId: plugin.id, jobId });
+      }
     } catch {
       const message = "Runner is not reachable.";
       setStatus(message);

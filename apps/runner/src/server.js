@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
+import crypto from "node:crypto";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,6 +19,8 @@ const SHARED_DATA_DIR =
 
 const PLUGIN_PUBLIC_PROTOCOL = process.env.RUNNER_PLUGIN_PUBLIC_PROTOCOL ?? "http";
 const PLUGIN_PUBLIC_HOST = process.env.RUNNER_PLUGIN_PUBLIC_HOST ?? "localhost";
+const JOB_TTL_MS = Number(process.env.RUNNER_JOB_TTL_MS ?? 15 * 60 * 1000);
+const installJobs = new Map();
 
 const getRegistryPath = () => {
   const override = process.env.RAINBOW_REGISTRY_PATH;
@@ -25,6 +28,93 @@ const getRegistryPath = () => {
     return override;
   }
   return path.join(os.homedir(), ".rainbow", "plugin-registry.json");
+};
+
+const createInstallJob = (payload) => {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const job = {
+    id,
+    type: "install",
+    status: "queued",
+    payload,
+    createdAt: now,
+    updatedAt: now,
+    phase: "queued",
+    progress: 0,
+    message: "Install request accepted.",
+    result: null,
+    error: null,
+  };
+  installJobs.set(id, job);
+  return job;
+};
+
+const updateInstallJob = (jobId, patch) => {
+  const current = installJobs.get(jobId);
+  if (!current) {
+    return null;
+  }
+  const next = {
+    ...current,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  };
+  installJobs.set(jobId, next);
+  return next;
+};
+
+const readInstallJob = (jobId) => {
+  const job = installJobs.get(jobId);
+  if (!job) {
+    return null;
+  }
+  return { ...job };
+};
+
+const processInstallJob = async (jobId) => {
+  const job = readInstallJob(jobId);
+  if (!job) {
+    return;
+  }
+
+  updateInstallJob(jobId, {
+    status: "running",
+    phase: "pulling-image",
+    progress: 10,
+    message: "Pulling plugin image...",
+    error: null,
+  });
+  try {
+    const result = await installPlugin(job.payload ?? {}, {
+      onProgress: (progressPatch) => {
+        updateInstallJob(jobId, progressPatch);
+      },
+    });
+    updateInstallJob(jobId, {
+      status: "succeeded",
+      phase: "completed",
+      progress: 100,
+      message: "Plugin installed successfully.",
+      result,
+      error: null,
+    });
+  } catch (error) {
+    updateInstallJob(jobId, {
+      status: "failed",
+      phase: "failed",
+      progress: 100,
+      message: "Plugin installation failed.",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  } finally {
+    const timer = setTimeout(() => {
+      installJobs.delete(jobId);
+    }, JOB_TTL_MS);
+    if (timer && typeof timer.unref === "function") {
+      timer.unref();
+    }
+  }
 };
 
 const getSeedRegistryPath = () => {
@@ -158,6 +248,27 @@ const getContainerIp = async (name) => {
   return null;
 };
 
+const waitForHttp = async (url, options = {}) => {
+  const timeoutMs = Number(options.timeoutMs ?? 30000);
+  const intervalMs = Number(options.intervalMs ?? 1000);
+  const startedAt = Date.now();
+  let lastError = null;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      return response;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
+  const reason =
+    lastError instanceof Error ? lastError.message : "timed out";
+  throw new Error(`Plugin endpoint is not reachable yet (${reason}).`);
+};
+
 const getContainerStatus = async (pluginId, metadata = {}) => {
   const cname = containerName(pluginId);
   const inspected = await inspectContainer(cname);
@@ -190,19 +301,46 @@ const getContainerStatus = async (pluginId, metadata = {}) => {
   };
 };
 
-const fetchManifest = async ({ pluginId, internalPort }) => {
+const fetchManifest = async ({ pluginId, internalPort, hostPort }) => {
   const cname = containerName(pluginId);
+  const mountPath = `/plugins/${pluginId}`;
+  const manifestPath = `${mountPath}/api/plugin-manifest`;
+  const timeoutMs = Number(process.env.RUNNER_MANIFEST_TIMEOUT_MS ?? 30000);
+  const intervalMs = Number(process.env.RUNNER_MANIFEST_RETRY_MS ?? 1000);
+
+  const candidates = [];
   const containerIp = await getContainerIp(cname);
-  if (!containerIp) {
-    throw new Error("Unable to resolve plugin container network IP.");
+  if (containerIp) {
+    candidates.push(`http://${containerIp}:${internalPort}${manifestPath}`);
+  }
+  candidates.push(`http://127.0.0.1:${hostPort}${manifestPath}`);
+  candidates.push(`http://localhost:${hostPort}${manifestPath}`);
+  if (PLUGIN_PUBLIC_HOST && PLUGIN_PUBLIC_HOST !== "localhost") {
+    candidates.push(`http://${PLUGIN_PUBLIC_HOST}:${hostPort}${manifestPath}`);
   }
 
-  const mountPath = `/plugins/${pluginId}`;
-  const url = `http://${containerIp}:${internalPort}${mountPath}/api/plugin-manifest`;
-  const response = await fetch(url, { cache: "no-store" });
+  let response = null;
+  let resolvedUrl = "";
+  const errors = [];
+  for (const url of candidates) {
+    try {
+      response = await waitForHttp(url, { timeoutMs, intervalMs });
+      resolvedUrl = url;
+      break;
+    } catch (error) {
+      errors.push(`${url} -> ${error instanceof Error ? error.message : "fetch failed"}`);
+    }
+  }
+
+  if (!response) {
+    throw new Error(
+      `Plugin manifest endpoint was unreachable. Tried: ${errors.join(" | ")}`,
+    );
+  }
+
   if (!response.ok) {
     throw new Error(
-      `Plugin manifest not found at ${url}. Ensure plugin basePath follows /plugins/${pluginId}.`,
+      `Plugin manifest not found at ${resolvedUrl}. Ensure plugin basePath follows /plugins/${pluginId}.`,
     );
   }
 
@@ -224,7 +362,9 @@ const fetchManifest = async ({ pluginId, internalPort }) => {
   return manifest;
 };
 
-const startPlugin = async (payload) => {
+const startPlugin = async (payload, options = {}) => {
+  const onProgress =
+    typeof options.onProgress === "function" ? options.onProgress : null;
   const registry = await loadRegistry();
   const plugins = Array.isArray(registry.plugins) ? registry.plugins : [];
 
@@ -245,6 +385,12 @@ const startPlugin = async (payload) => {
 
   await ensureContainerRemoved(cname);
   await ensureDir(path.join(SHARED_DATA_DIR, "plugin-registry.json"));
+  onProgress?.({
+    status: "running",
+    phase: "starting-container",
+    progress: 50,
+    message: "Starting plugin container...",
+  });
 
   await runDocker([
     "run",
@@ -265,7 +411,13 @@ const startPlugin = async (payload) => {
   ]);
 
   try {
-    const manifest = await fetchManifest({ pluginId, internalPort });
+    onProgress?.({
+      status: "running",
+      phase: "checking-manifest",
+      progress: 75,
+      message: "Waiting for plugin manifest...",
+    });
+    const manifest = await fetchManifest({ pluginId, internalPort, hostPort });
     const mountPath = manifest.mountPath ?? `/plugins/${pluginId}`;
     const defaultPath = manifest.views?.[0]?.route ?? "/";
 
@@ -290,6 +442,12 @@ const startPlugin = async (payload) => {
     }
 
     registry.plugins = plugins;
+    onProgress?.({
+      status: "running",
+      phase: "registering-plugin",
+      progress: 90,
+      message: "Registering plugin in local registry...",
+    });
     await saveRegistry(registry);
     return entry;
   } catch (error) {
@@ -313,13 +471,27 @@ const removePlugin = async (pluginId) => {
   return { id: pluginId, status: "removed" };
 };
 
-const installPlugin = async (payload) => {
+const installPlugin = async (payload, options = {}) => {
+  const onProgress =
+    typeof options.onProgress === "function" ? options.onProgress : null;
   const { image } = payload;
   if (!image) {
     throw new Error("image is required.");
   }
+  onProgress?.({
+    status: "running",
+    phase: "pulling-image",
+    progress: 20,
+    message: "Pulling plugin image...",
+  });
   await runDocker(["pull", image]);
-  return startPlugin({ image });
+  onProgress?.({
+    status: "running",
+    phase: "image-pulled",
+    progress: 40,
+    message: "Image pulled. Preparing container...",
+  });
+  return startPlugin({ image }, options);
 };
 
 const getPluginStatus = async (query) => {
@@ -372,6 +544,26 @@ const getPluginLogs = async (pluginId, tail = 200) => {
   };
 };
 
+const verifyDockerRuntime = async () => {
+  try {
+    await runDocker(["--version"]);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "docker command failed";
+    throw new Error(
+      `Docker CLI is not available in runner environment (${reason}). Install docker-cli in the runner image.`,
+    );
+  }
+
+  try {
+    await runDocker(["info", "--format", "{{.ServerVersion}}"]);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "docker info failed";
+    throw new Error(
+      `Docker daemon is not reachable (${reason}). If runner is a container, mount /var/run/docker.sock.`,
+    );
+  }
+};
+
 const jsonResponse = (res, status, data) => {
   res.writeHead(status, {
     "Content-Type": "application/json",
@@ -407,8 +599,20 @@ const handleRequest = async (req, res) => {
       return jsonResponse(res, 200, { ok: true });
     }
     if (req.method === "POST" && url.pathname === "/plugins/install") {
-      const data = await installPlugin(body);
-      return jsonResponse(res, 200, { ok: true, data });
+      const job = createInstallJob(body);
+      processInstallJob(job.id);
+      return jsonResponse(res, 202, {
+        ok: true,
+        message: "Install accepted and queued.",
+        data: {
+          jobId: job.id,
+          status: job.status,
+          phase: job.phase,
+          progress: job.progress,
+          message: job.message,
+          createdAt: job.createdAt,
+        },
+      });
     }
     if (req.method === "POST" && url.pathname === "/plugins/start") {
       const data = await startPlugin(body);
@@ -436,6 +640,17 @@ const handleRequest = async (req, res) => {
       const data = await getPluginLogs(pluginId, Number.isFinite(tail) ? tail : 200);
       return jsonResponse(res, 200, { ok: true, data });
     }
+    if (req.method === "GET" && url.pathname.startsWith("/jobs/")) {
+      const jobId = url.pathname.slice("/jobs/".length).trim();
+      if (!jobId) {
+        return jsonResponse(res, 400, { ok: false, message: "job id is required." });
+      }
+      const job = readInstallJob(jobId);
+      if (!job) {
+        return jsonResponse(res, 404, { ok: false, message: "Job not found." });
+      }
+      return jsonResponse(res, 200, { ok: true, data: job });
+    }
 
     return jsonResponse(res, 404, { ok: false, message: "Not found" });
   } catch (error) {
@@ -448,6 +663,16 @@ const handleRequest = async (req, res) => {
 
 const server = http.createServer(handleRequest);
 
-server.listen(PORT, HOST, () => {
-  process.stdout.write(`Runner listening on http://${HOST}:${PORT}\n`);
+const bootstrap = async () => {
+  await verifyDockerRuntime();
+  server.listen(PORT, HOST, () => {
+    process.stdout.write(`Runner listening on http://${HOST}:${PORT}\n`);
+  });
+};
+
+bootstrap().catch((error) => {
+  process.stderr.write(
+    `[runner] Startup failed: ${error instanceof Error ? error.message : "Unknown error"}\n`,
+  );
+  process.exit(1);
 });
