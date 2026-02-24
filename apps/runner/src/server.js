@@ -16,6 +16,7 @@ const PORT_RANGE_END = Number(process.env.RUNNER_PORT_END ?? 4999);
 const DEFAULT_INTERNAL_PORT = Number(process.env.RUNNER_DEFAULT_INTERNAL_PORT ?? 3000);
 const SHARED_DATA_DIR =
   process.env.RAINBOW_SHARED_DIR ?? path.join(os.homedir(), ".rainbow");
+const SHARED_DATA_VOLUME = process.env.RUNNER_SHARED_DOCKER_VOLUME ?? "";
 
 const PLUGIN_PUBLIC_PROTOCOL = process.env.RUNNER_PLUGIN_PUBLIC_PROTOCOL ?? "http";
 const PLUGIN_PUBLIC_HOST = process.env.RUNNER_PLUGIN_PUBLIC_HOST ?? "localhost";
@@ -181,6 +182,13 @@ const runDockerRaw = async (args) => {
 const runDocker = async (args) => {
   const { stdout } = await runDockerRaw(args);
   return stdout;
+};
+
+const getPluginSharedMount = () => {
+  if (SHARED_DATA_VOLUME.trim()) {
+    return `${SHARED_DATA_VOLUME.trim()}:/root/.rainbow`;
+  }
+  return `${SHARED_DATA_DIR}:/root/.rainbow`;
 };
 
 const containerName = (pluginId) => `rainbow-plugin-${pluginId}`;
@@ -384,7 +392,9 @@ const startPlugin = async (payload, options = {}) => {
   const cname = containerName(pluginId);
 
   await ensureContainerRemoved(cname);
-  await ensureDir(path.join(SHARED_DATA_DIR, "plugin-registry.json"));
+  if (!SHARED_DATA_VOLUME.trim()) {
+    await ensureDir(path.join(SHARED_DATA_DIR, "plugin-registry.json"));
+  }
   onProgress?.({
     status: "running",
     phase: "starting-container",
@@ -404,7 +414,7 @@ const startPlugin = async (payload, options = {}) => {
     "-e",
     "HOSTNAME=0.0.0.0",
     "-v",
-    `${SHARED_DATA_DIR}:/root/.rainbow`,
+    getPluginSharedMount(),
     "-p",
     `${hostPort}:${internalPort}`,
     image,

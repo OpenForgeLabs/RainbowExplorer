@@ -20,6 +20,7 @@ services:
       - RUNNER_PORT_START=4100
       - RUNNER_PORT_END=4999
       - RAINBOW_SHARED_DIR=/root/.rainbow
+      - RUNNER_SHARED_DOCKER_VOLUME=rainbow-data
       - RUNNER_PLUGIN_PUBLIC_PROTOCOL=http
       - RUNNER_PLUGIN_PUBLIC_HOST=localhost
     volumes:
