@@ -17,6 +17,7 @@ const DEFAULT_INTERNAL_PORT = Number(process.env.RUNNER_DEFAULT_INTERNAL_PORT ??
 const SHARED_DATA_DIR =
   process.env.RAINBOW_SHARED_DIR ?? path.join(os.homedir(), ".rainbow");
 const SHARED_DATA_VOLUME = process.env.RUNNER_SHARED_DOCKER_VOLUME ?? "";
+const PLUGIN_DOCKER_NETWORK = process.env.RUNNER_PLUGIN_DOCKER_NETWORK ?? "";
 
 const PLUGIN_PUBLIC_PROTOCOL = process.env.RUNNER_PLUGIN_PUBLIC_PROTOCOL ?? "http";
 const PLUGIN_PUBLIC_HOST = process.env.RUNNER_PLUGIN_PUBLIC_HOST ?? "localhost";
@@ -229,6 +230,13 @@ const inferPluginIdFromImage = (image) => {
 const resolvePluginBaseUrl = (hostPort) =>
   `${PLUGIN_PUBLIC_PROTOCOL}://${PLUGIN_PUBLIC_HOST}:${hostPort}`;
 
+const resolveInternalPluginBaseUrl = (pluginId, hostPort, internalPort) => {
+  if (PLUGIN_DOCKER_NETWORK.trim()) {
+    return `http://${containerName(pluginId)}:${internalPort}`;
+  }
+  return resolvePluginBaseUrl(hostPort);
+};
+
 const inspectContainer = async (name) => {
   try {
     const raw = await runDocker(["inspect", name]);
@@ -417,6 +425,9 @@ const startPlugin = async (payload, options = {}) => {
     getPluginSharedMount(),
     "-p",
     `${hostPort}:${internalPort}`,
+    ...(PLUGIN_DOCKER_NETWORK.trim()
+      ? ["--network", PLUGIN_DOCKER_NETWORK.trim()]
+      : []),
     image,
   ]);
 
@@ -441,7 +452,7 @@ const startPlugin = async (payload, options = {}) => {
       hostPort,
       mountPath,
       defaultPath,
-      baseUrl: resolvePluginBaseUrl(hostPort),
+      baseUrl: resolveInternalPluginBaseUrl(pluginId, hostPort, internalPort),
       enabled: true,
     };
 

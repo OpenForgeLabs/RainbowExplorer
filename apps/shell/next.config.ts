@@ -50,7 +50,13 @@ const nextConfig: NextConfig = {
     "@openforgelabs/rainbow-contracts",
   ],
   async rewrites() {
-    return buildRewrites();
+    return [
+      {
+        source: "/plugins/:pluginId/:path*",
+        destination: "/api/plugins/:pluginId/proxy/:path*",
+      },
+      ...buildRewrites(),
+    ];
   },
 };
 

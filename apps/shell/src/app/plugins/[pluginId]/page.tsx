@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { PluginManifest } from "@openforgelabs/rainbow-contracts";
 import { getPluginById, loadPluginRegistry } from "@/lib/pluginRegistry";
 
 type PluginRedirectPageProps = {
@@ -14,8 +15,21 @@ export default async function PluginRedirectPage({ params }: PluginRedirectPageP
     redirect("/plugins");
   }
 
-  const baseUrl = plugin?.baseUrl ?? "";
-  const mountPath = plugin?.mountPath ?? `/plugins/${pluginId}`;
-  const target = `${baseUrl}${mountPath}`;
-  redirect(target);
+  const mountPath = plugin.mountPath ?? `/plugins/${pluginId}`;
+  const manifestUrl = `${plugin.baseUrl.replace(/\/+$/, "")}${mountPath}/api/plugin-manifest`;
+
+  try {
+    const manifestResponse = await fetch(manifestUrl, { cache: "no-store" });
+    if (manifestResponse.ok) {
+      const manifest = (await manifestResponse.json()) as PluginManifest;
+      const firstView = manifest.views?.[0];
+      if (firstView?.id) {
+        redirect(`/views/${pluginId}/${firstView.id}`);
+      }
+    }
+  } catch {
+    // Fall back to listing page below when manifest is not reachable.
+  }
+
+  redirect("/plugins");
 }

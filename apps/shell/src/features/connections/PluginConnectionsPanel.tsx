@@ -28,6 +28,12 @@ type ConnectionCard = {
   port?: number;
 };
 
+const resolvePluginId = (plugin: PluginWithManifest) =>
+  plugin.manifest.id?.trim() || plugin.registry.id;
+
+const resolvePluginName = (plugin: PluginWithManifest) =>
+  plugin.manifest.name?.trim() || plugin.registry.name || resolvePluginId(plugin);
+
 const resolveDefaultViewId = (manifest: PluginManifest) => {
   if (!manifest.views?.length) {
     return "default";
@@ -96,6 +102,9 @@ export function PluginConnectionsPanel() {
               `/api/plugins/${entry.id}/proxy/api/plugin-manifest`,
               { cache: "no-store" },
             );
+            if (!response.ok) {
+              throw new Error(`Manifest for '${entry.id}' is not reachable.`);
+            }
             const manifest = (await response.json()) as PluginManifest;
             return { registry: entry, manifest };
           }),
@@ -118,8 +127,8 @@ export function PluginConnectionsPanel() {
     return plugins.flatMap((plugin) => {
       const raw = (plugin as PluginWithManifest & { connections?: unknown }).connections;
       return (raw as Array<Record<string, unknown>> | undefined)?.map((item) => ({
-        pluginId: plugin.manifest.id,
-        pluginName: plugin.manifest.name,
+        pluginId: resolvePluginId(plugin),
+        pluginName: resolvePluginName(plugin),
         manifest: plugin.manifest,
         icon: plugin.manifest.views?.[0]?.icon ?? "hub",
         connectionName: String(item.name ?? ""),
@@ -232,7 +241,7 @@ export function PluginConnectionsPanel() {
       }
       setEditValues(data.data as Record<string, string | number | boolean | null>);
       setActivePlugin(
-        plugins.find((plugin) => plugin.manifest.id === connection.pluginId) ?? null,
+        plugins.find((plugin) => resolvePluginId(plugin) === connection.pluginId) ?? null,
       );
       setSelectedConnectionKey(`${connection.pluginId}-${connection.connectionName}`);
     } catch {
@@ -249,7 +258,7 @@ export function PluginConnectionsPanel() {
     if (!addPickerSelection) {
       return;
     }
-    const target = plugins.find((plugin) => plugin.manifest.id === addPickerSelection);
+    const target = plugins.find((plugin) => resolvePluginId(plugin) === addPickerSelection);
     if (!target) {
       return;
     }
@@ -309,8 +318,8 @@ export function PluginConnectionsPanel() {
             >
               <option value="all">All technologies</option>
               {plugins.map((plugin) => (
-                <option key={plugin.manifest.id} value={plugin.manifest.id}>
-                  {plugin.manifest.name}
+                <option key={resolvePluginId(plugin)} value={resolvePluginId(plugin)}>
+                  {resolvePluginName(plugin)}
                 </option>
               ))}
             </select>
@@ -408,17 +417,18 @@ export function PluginConnectionsPanel() {
       >
         <div className="grid gap-2">
           {plugins.map((plugin) => {
-            const selectedTech = addPickerSelection === plugin.manifest.id;
+            const pluginId = resolvePluginId(plugin);
+            const selectedTech = addPickerSelection === pluginId;
             return (
               <button
-                key={plugin.manifest.id}
+                key={pluginId}
                 type="button"
                 className={`ui-focus relative rounded-xl border px-3 py-3 text-left transition ${
                   selectedTech
                     ? "border-primary bg-primary/10 shadow-[var(--rx-shadow-xs)]"
                     : "border-border bg-surface hover:border-primary/40"
                 }`}
-                onClick={() => setAddPickerSelection(plugin.manifest.id)}
+                onClick={() => setAddPickerSelection(pluginId)}
               >
                 <span
                   className={`absolute inset-y-0 left-0 w-1 rounded-l-xl ${
@@ -431,8 +441,8 @@ export function PluginConnectionsPanel() {
                     <span className="material-symbols-outlined text-[18px]">extension</span>
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-foreground">{plugin.manifest.name}</div>
-                    <div className="text-xs uppercase tracking-widest text-subtle">{plugin.manifest.id}</div>
+                    <div className="text-sm font-semibold text-foreground">{resolvePluginName(plugin)}</div>
+                    <div className="text-xs uppercase tracking-widest text-subtle">{pluginId}</div>
                   </div>
                 </div>
               </button>

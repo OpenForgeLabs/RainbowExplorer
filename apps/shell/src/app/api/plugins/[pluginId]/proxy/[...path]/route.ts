@@ -18,36 +18,35 @@ const forward = async (request: NextRequest, target: string) => {
     request.method === "GET" || request.method === "HEAD"
       ? undefined
       : await request.text();
+  const targetWithQuery = `${target}${request.nextUrl.search ?? ""}`;
   try {
-    const response = await fetch(target, {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete("host");
+    requestHeaders.delete("content-length");
+
+    const response = await fetch(targetWithQuery, {
       method: request.method,
-      headers: {
-        "content-type": request.headers.get("content-type") ?? "application/json",
-      },
+      headers: requestHeaders,
       body,
       cache: "no-store",
     });
-    const text = await response.text();
-    try {
-      const data = JSON.parse(text);
-      return NextResponse.json(data, { status: response.status });
-    } catch {
-      return NextResponse.json(
-        {
-          isSuccess: false,
-          message: "Invalid response from plugin.",
-          reasons: [text],
-        },
-        { status: 502 },
-      );
-    }
+
+    const headers = new Headers(response.headers);
+    headers.delete("content-encoding");
+    headers.delete("transfer-encoding");
+    headers.delete("connection");
+
+    return new NextResponse(response.body, {
+      status: response.status,
+      headers,
+    });
   } catch (error) {
     return NextResponse.json(
       {
         isSuccess: false,
         message: "Plugin is not reachable.",
         reasons: [error instanceof Error ? error.message : "Unknown error."],
-        data: { target },
+        data: { target: targetWithQuery },
       },
       { status: 502 },
     );

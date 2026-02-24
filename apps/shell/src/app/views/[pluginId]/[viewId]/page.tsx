@@ -46,14 +46,13 @@ export default async function ViewPage({ params, searchParams }: ViewPageProps) 
     );
   }
 
-  const base = plugin.baseUrl.replace(/\/+$/, "");
-  const mountPath = plugin.mountPath ?? `/plugins/${plugin.id}`;
   const connectionName = conn ?? "Docker";
   const route = view.route.replace(
     "{connectionName}",
     encodeURIComponent(connectionName),
   );
-  const src = `${base}${mountPath}${route}`;
+  const normalizedRoute = route.replace(/^\//, "");
+  const src = `${origin}/api/plugins/${plugin.id}/proxy/${normalizedRoute}`;
 
   return (
     <main className="flex min-h-[calc(100dvh-64px)] flex-1 flex-col px-4 py-4">
