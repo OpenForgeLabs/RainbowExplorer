@@ -4,10 +4,21 @@ on:
   push:
     tags:
       - "v*"
+      - "shell-v*"
+      - "runner-v*"
   release:
     types: [published]
   workflow_dispatch:
     inputs:
+      image_target:
+        description: "Select which image to publish"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - "all"
+          - "shell"
+          - "runner"
       publish_latest:
         description: "Also push :latest"
         required: false
@@ -63,23 +74,52 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve Publish Scope
+        id: scope
+        shell: bash
+        run: |
+          publish="false"
+          target="${{ github.event.inputs.image_target || 'all' }}"
+          image="${{ matrix.name }}"
+          ref_name="${GITHUB_REF_NAME}"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "$target" == "all" || "$target" == "$image" ]]; then
+              publish="true"
+            fi
+          else
+            if [[ "$ref_name" =~ ^shell-v ]]; then
+              [[ "$image" == "shell" ]] && publish="true"
+            elif [[ "$ref_name" =~ ^runner-v ]]; then
+              [[ "$image" == "runner" ]] && publish="true"
+            else
+              publish="true"
+            fi
+          fi
+
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
       - name: Docker metadata
+        if: steps.scope.outputs.publish == 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=ref,event=tag
+            type=match,pattern=^v(.*)$,group=1
+            type=match,pattern=^shell-v(.*)$,group=1,enable=${{ matrix.name == 'shell' }}
+            type=match,pattern=^runner-v(.*)$,group=1,enable=${{ matrix.name == 'runner' }}
             type=sha
             type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' || github.event.inputs.publish_latest == 'true' }}
 
       - name: Smoke test runner image (docker-cli availability)
-        if: matrix.name == 'runner'
+        if: steps.scope.outputs.publish == 'true' && matrix.name == 'runner'
         run: |
           docker build -f docker/Dockerfile.runner -t rainbow-runner-smoke:${{ github.sha }} .
           docker run --rm rainbow-runner-smoke:${{ github.sha }} docker --version
 
       - name: Build & push (${{ matrix.name }})
+        if: steps.scope.outputs.publish == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
