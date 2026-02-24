@@ -40,37 +40,39 @@ Then rename and adjust:
 - routes under `src/app/api/<pluginId>/...`
 - `next.config.ts` `basePath`
 
-## Required shell registry entry
+## Base path convention (mandatory)
 
-Add your plugin to shell registry (`apps/shell/plugin-registry.json` or `~/.rainbow/plugin-registry.json`):
+Rainbow shell runner resolves plugin metadata from image + manifest using this convention:
 
-```json
-{
-  "plugins": [
-    {
-      "id": "my-plugin",
-      "name": "My Plugin",
-      "baseUrl": "http://localhost:5100",
-      "mountPath": "/plugins/my-plugin",
-      "defaultPath": "/",
-      "description": "My infrastructure plugin",
-      "enabled": true
-    }
-  ]
-}
-```
+- Plugin base path: `/plugins/<pluginId>`
+- Manifest URL: `/plugins/<pluginId>/api/plugin-manifest`
+
+This means:
+1. `next.config.ts` `basePath` must match `/plugins/<pluginId>`
+2. `manifest.id` must equal `<pluginId>`
+
+If these values diverge, plugin installation from Docker image will fail by design.
+
+## Installation in shell
+
+Preferred flow:
+1. Open **Plugins** in shell.
+2. Paste Docker image.
+3. Shell runner pulls image, starts container, validates manifest, and writes registry entry automatically.
+
+Manual registry edit is still possible (`~/.rainbow/plugin-registry.json`) but not required for normal workflows.
 
 ## Required plugin endpoints
 
 ### Manifest
 
-`GET {baseUrl}{mountPath}/api/plugin-manifest`
+`GET {baseUrl}/plugins/{pluginId}/api/plugin-manifest`
 
 - Must return `PluginManifest` from `@openforgelabs/rainbow-contracts`.
 
 ### Connection test
 
-`POST {baseUrl}{mountPath}/api/{pluginId}/connections/test`
+`POST {baseUrl}/plugins/{pluginId}/api/{pluginId}/connections/test`
 
 Expected response shape:
 
@@ -85,7 +87,7 @@ Expected response shape:
 
 ### Optional connection summary
 
-`GET {baseUrl}{mountPath}/api/{pluginId}/connections/summary?name=<connectionName>`
+`GET {baseUrl}/plugins/{pluginId}/api/{pluginId}/connections/summary?name=<connectionName>`
 
 Useful to show status/metadata in shell connection cards.
 
@@ -128,6 +130,54 @@ Plugins are hosted in iframes and receive theme through:
 - postMessage theme updates
 
 Use `HostedThemeBridge` from `@openforgelabs/rainbow-ui` in plugin layout.
+
+## Global loader bridge (recommended)
+
+Shell now supports a global full-screen loader that plugins can trigger during long operations.
+
+Message shape:
+
+```ts
+window.parent.postMessage(
+  {
+    type: "shell:loader",
+    active: true,
+    message: "Loading plugin data...",
+  },
+  "*",
+);
+```
+
+Stop it with:
+
+```ts
+window.parent.postMessage({ type: "shell:loader", active: false }, "*");
+```
+
+For concurrency-safe usage, use the helper included in the starter template:
+
+- `templates/plugin-starter-next/src/lib/shellLoader.ts`
+- `templates/plugin-starter-next/src/components/ShellRouteLoaderBridge.tsx`
+
+Example:
+
+```ts
+import { withShellLoader } from "@/lib/shellLoader";
+
+await withShellLoader(async () => {
+  await fetch("/api/my-plugin/heavy-operation");
+}, "Loading plugin data...");
+```
+
+For route transitions inside the plugin iframe, mount the route bridge in plugin layout:
+
+```tsx
+import { ShellRouteLoaderBridge } from "@/components/ShellRouteLoaderBridge";
+
+<HostedThemeBridge allowedOrigins={[process.env.NEXT_PUBLIC_SHELL_ORIGIN ?? "http://localhost:3000"]} />
+<ShellRouteLoaderBridge />
+{children}
+```
 
 ## Where to find coherent structure references
 

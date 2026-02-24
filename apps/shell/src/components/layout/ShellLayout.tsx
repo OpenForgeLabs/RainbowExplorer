@@ -1,22 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { SettingsModal } from "@/components/layout/SettingsModal";
+import { useGlobalLoader } from "@/lib/globalLoader";
 
 export function ShellLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const pathname = usePathname();
+  const { begin, end } = useGlobalLoader();
+  const firstPathRef = useRef(true);
+
+  useEffect(() => {
+    if (firstPathRef.current) {
+      firstPathRef.current = false;
+      return;
+    }
+
+    const token = begin("Loading screen...");
+    const timer = window.setTimeout(() => {
+      end(token);
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+      end(token);
+    };
+  }, [pathname, begin, end]);
 
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed((prev) => !prev)}
-        onOpenSettings={() => setSettingsOpen(true)}
       />
       <div className="flex flex-1 flex-col bg-surface/30">{children}</div>
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

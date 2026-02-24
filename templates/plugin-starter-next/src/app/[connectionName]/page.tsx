@@ -1,4 +1,5 @@
 import { Badge, Button, Card } from "@openforgelabs/rainbow-ui";
+import { ShellLoaderDemoButton } from "@/components/ShellLoaderDemoButton";
 
 export default async function StarterConnectionPage({
   params,
@@ -21,6 +22,7 @@ export default async function StarterConnectionPage({
         <div className="mt-4 flex gap-2">
           <Button variant="solid" tone="primary">Primary Action</Button>
           <Button variant="outline" tone="neutral">Secondary Action</Button>
+          <ShellLoaderDemoButton />
         </div>
       </Card>
     </main>

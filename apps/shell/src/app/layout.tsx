@@ -2,6 +2,7 @@ import "./../styles/globals.css";
 import { ToastProvider } from "@openforgelabs/rainbow-ui";
 import { ShellLayout } from "@/components/layout/ShellLayout";
 import { ThemeProvider } from "@/lib/theme";
+import { GlobalLoaderProvider } from "@/lib/globalLoader";
 
 export const metadata = {
   title: "RainbowExplorer",
@@ -21,7 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen">
         <ThemeProvider>
           <ToastProvider>
-            <ShellLayout>{children}</ShellLayout>
+            <GlobalLoaderProvider>
+              <ShellLayout>{children}</ShellLayout>
+            </GlobalLoaderProvider>
           </ToastProvider>
         </ThemeProvider>
       </body>
