@@ -2,12 +2,7 @@ name: Publish Explorer Images
 
 on:
   push:
-    tags:
-      - "v*"
-      - "shell-v*"
-      - "runner-v*"
-  release:
-    types: [published]
+    branches: [master]
   workflow_dispatch:
     inputs:
       image_target:
@@ -29,7 +24,8 @@ on:
           - "false"
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   packages: write
 
 concurrency:
@@ -60,14 +56,71 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Configure npm auth for GitHub Packages
+        run: |
+          printf "@openforgelabs:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n" > ~/.npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      - name: Install
+        run: pnpm install
+
+      - name: Create Release PR or Continue Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: echo "No npm publish for this repo"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect changed package versions
+        id: detect
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          prev_ref="HEAD^"
+          if ! git rev-parse "$prev_ref" >/dev/null 2>&1; then
+            prev_ref="$(git rev-list --max-parents=0 HEAD)"
+          fi
+
+          curr_shell_version=$(node -p "require('./apps/shell/package.json').version")
+          curr_runner_version=$(node -p "require('./apps/runner/package.json').version")
+
+          prev_shell_version=$(git show "$prev_ref:apps/shell/package.json" 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{try{console.log(JSON.parse(s).version||'')}catch{console.log('')}})" || true)
+          prev_runner_version=$(git show "$prev_ref:apps/runner/package.json" 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{try{console.log(JSON.parse(s).version||'')}catch{console.log('')}})" || true)
+
+          shell_changed="false"
+          runner_changed="false"
+          if [[ "$curr_shell_version" != "$prev_shell_version" ]]; then shell_changed="true"; fi
+          if [[ "$curr_runner_version" != "$prev_runner_version" ]]; then runner_changed="true"; fi
+
+          echo "shell_changed=$shell_changed" >> "$GITHUB_OUTPUT"
+          echo "runner_changed=$runner_changed" >> "$GITHUB_OUTPUT"
+          echo "shell_version=$curr_shell_version" >> "$GITHUB_OUTPUT"
+          echo "runner_version=$curr_runner_version" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
+        if: steps.changesets.outputs.hasChangesets == 'false'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
+        if: steps.changesets.outputs.hasChangesets == 'false'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: steps.changesets.outputs.hasChangesets == 'false'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -76,23 +129,21 @@ jobs:
 
       - name: Resolve Publish Scope
         id: scope
+        if: steps.changesets.outputs.hasChangesets == 'false'
         shell: bash
         run: |
           publish="false"
           target="${{ github.event.inputs.image_target || 'all' }}"
           image="${{ matrix.name }}"
-          ref_name="${GITHUB_REF_NAME}"
 
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "$target" == "all" || "$target" == "$image" ]]; then
+          if [[ "$image" == "shell" && "${{ steps.detect.outputs.shell_changed }}" == "true" ]]; then
+            if [[ "$target" == "all" || "$target" == "shell" ]]; then
               publish="true"
             fi
-          else
-            if [[ "$ref_name" =~ ^shell-v ]]; then
-              [[ "$image" == "shell" ]] && publish="true"
-            elif [[ "$ref_name" =~ ^runner-v ]]; then
-              [[ "$image" == "runner" ]] && publish="true"
-            else
+          fi
+
+          if [[ "$image" == "runner" && "${{ steps.detect.outputs.runner_changed }}" == "true" ]]; then
+            if [[ "$target" == "all" || "$target" == "runner" ]]; then
               publish="true"
             fi
           fi
@@ -106,9 +157,7 @@ jobs:
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=match,pattern=^v(.*)$,group=1
-            type=match,pattern=^shell-v(.*)$,group=1,enable=${{ matrix.name == 'shell' }}
-            type=match,pattern=^runner-v(.*)$,group=1,enable=${{ matrix.name == 'runner' }}
+            type=raw,value=${{ matrix.name == 'shell' && steps.detect.outputs.shell_version || steps.detect.outputs.runner_version }}
             type=sha
             type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' || github.event.inputs.publish_latest == 'true' }}
 
