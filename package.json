@@ -7,9 +7,13 @@
     "dev:runner": "pnpm --dir apps/runner dev",
     "dev:all": "node scripts/dev-all.mjs",
     "install:all": "pnpm install",
-    "check:styles": "node scripts/check-no-hardcoded-colors.mjs"
+    "check:styles": "node scripts/check-no-hardcoded-colors.mjs",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "publish-packages": "changeset publish"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.29.7",
     "typescript": "^5.5.4"
   }
 }
