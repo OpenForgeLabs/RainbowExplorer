@@ -10,12 +10,12 @@ import {
   Input,
 } from "@openforgelabs/rainbow-ui";
 import type { PluginRegistryEntry } from "@/lib/pluginRegistry";
+import { useGlobalLoader } from "@/lib/globalLoader";
 
 type CatalogPlugin = {
   id: string;
   name: string;
   image: string;
-  internalPort?: number;
   description?: string;
   tags?: string[];
 };
@@ -34,13 +34,10 @@ const runnerUrl =
   process.env.NEXT_PUBLIC_PLUGIN_RUNNER_URL ?? "http://localhost:5099";
 
 export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
+  const { withLoader } = useGlobalLoader();
   const [catalog, setCatalog] = useState<CatalogPlugin[]>([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
-  const [form, setForm] = useState({
-    id: "",
-    name: "",
-    image: "",
-  });
+  const [image, setImage] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
@@ -63,6 +60,32 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
       .finally(() => setIsLoadingCatalog(false));
   }, []);
 
+  const logActivity = async (
+    action: string,
+    statusValue: "success" | "error" | "info",
+    message: string,
+    metadata?: Record<string, unknown>,
+  ) => {
+    try {
+      await fetch("/api/activity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "log",
+          event: {
+            category: "plugins",
+            action,
+            status: statusValue,
+            message,
+            metadata,
+          },
+        }),
+      });
+    } catch {
+      // no-op
+    }
+  };
+
   const callRunner = async <T,>(path: string, body?: unknown) => {
     const response = await fetch(`${runnerUrl}${path}`, {
       method: "POST",
@@ -72,23 +95,35 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
     return (await response.json()) as RunnerResponse<T>;
   };
 
-  const handleInstall = async (payload: CatalogPlugin) => {
-    setBusyId(payload.id);
+  const handleInstall = async (payload: { image: string }) => {
+    setBusyId(payload.image);
     setIsInstalling(true);
     setStatus(null);
     try {
-      const response = await callRunner("/plugins/install", {
-        id: payload.id,
-        name: payload.name,
-        image: payload.image,
-      });
+      const response = await withLoader(
+        async () =>
+          callRunner("/plugins/install", {
+            image: payload.image,
+          }),
+        "Installing plugin...",
+      );
       if (!response.ok) {
-        setStatus(response.message ?? "Failed to install plugin.");
+        const message = response.message ?? "Failed to install plugin.";
+        setStatus(message);
+        await logActivity("install", "error", message, { image: payload.image });
         return;
       }
-      setStatus("Plugin installed. Refresh to load it.");
+      const message = "Plugin installed from image. Refresh to load it.";
+      setStatus(message);
+      await logActivity("install", "success", message, {
+        image: payload.image,
+        pluginId: response.data && (response.data as { id?: string }).id,
+      });
+      setImage("");
     } catch {
-      setStatus("Runner is not reachable.");
+      const message = "Runner is not reachable.";
+      setStatus(message);
+      await logActivity("install", "error", message, { image: payload.image });
     } finally {
       setIsInstalling(false);
       setBusyId(null);
@@ -96,26 +131,34 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
   };
 
   const handleUpdate = async (plugin: PluginRegistryEntry) => {
-    const image = (plugin as Record<string, unknown>).image;
-    if (typeof image !== "string" || !image) {
-      setStatus("No image recorded for this plugin. Reinstall from image.");
+    const pluginImage = (plugin as Record<string, unknown>).image;
+    if (typeof pluginImage !== "string" || !pluginImage) {
+      const message = "No image recorded for this plugin. Reinstall from image.";
+      setStatus(message);
+      await logActivity("update", "error", message, { pluginId: plugin.id });
       return;
     }
+
     setBusyId(plugin.id);
     setStatus(null);
     try {
-      const response = await callRunner("/plugins/install", {
-        id: plugin.id,
-        name: plugin.name,
-        image,
-      });
+      const response = await withLoader(
+        async () => callRunner("/plugins/install", { image: pluginImage }),
+        "Updating plugin...",
+      );
       if (!response.ok) {
-        setStatus(response.message ?? "Failed to update plugin.");
+        const message = response.message ?? "Failed to update plugin.";
+        setStatus(message);
+        await logActivity("update", "error", message, { pluginId: plugin.id });
         return;
       }
-      setStatus("Plugin updated. Refresh to load changes.");
+      const message = "Plugin updated. Refresh to load changes.";
+      setStatus(message);
+      await logActivity("update", "success", message, { pluginId: plugin.id });
     } catch {
-      setStatus("Runner is not reachable.");
+      const message = "Runner is not reachable.";
+      setStatus(message);
+      await logActivity("update", "error", message, { pluginId: plugin.id });
     } finally {
       setBusyId(null);
     }
@@ -125,14 +168,23 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
     setBusyId(plugin.id);
     setStatus(null);
     try {
-      const response = await callRunner("/plugins/start", { id: plugin.id });
+      const response = await withLoader(
+        async () => callRunner("/plugins/start", { id: plugin.id }),
+        "Starting plugin...",
+      );
       if (!response.ok) {
-        setStatus(response.message ?? "Failed to start plugin.");
+        const message = response.message ?? "Failed to start plugin.";
+        setStatus(message);
+        await logActivity("start", "error", message, { pluginId: plugin.id });
         return;
       }
-      setStatus("Plugin started. Refresh to update baseUrl.");
+      const message = "Plugin started. Refresh to update baseUrl.";
+      setStatus(message);
+      await logActivity("start", "success", message, { pluginId: plugin.id });
     } catch {
-      setStatus("Runner is not reachable.");
+      const message = "Runner is not reachable.";
+      setStatus(message);
+      await logActivity("start", "error", message, { pluginId: plugin.id });
     } finally {
       setBusyId(null);
     }
@@ -142,14 +194,23 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
     setBusyId(pluginId);
     setStatus(null);
     try {
-      const response = await callRunner("/plugins/stop", { id: pluginId });
+      const response = await withLoader(
+        async () => callRunner("/plugins/stop", { id: pluginId }),
+        "Stopping plugin...",
+      );
       if (!response.ok) {
-        setStatus(response.message ?? "Failed to stop plugin.");
+        const message = response.message ?? "Failed to stop plugin.";
+        setStatus(message);
+        await logActivity("stop", "error", message, { pluginId });
         return;
       }
-      setStatus("Plugin stopped.");
+      const message = "Plugin stopped.";
+      setStatus(message);
+      await logActivity("stop", "success", message, { pluginId });
     } catch {
-      setStatus("Runner is not reachable.");
+      const message = "Runner is not reachable.";
+      setStatus(message);
+      await logActivity("stop", "error", message, { pluginId });
     } finally {
       setBusyId(null);
     }
@@ -159,14 +220,23 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
     setBusyId(pluginId);
     setStatus(null);
     try {
-      const response = await callRunner("/plugins/remove", { id: pluginId });
+      const response = await withLoader(
+        async () => callRunner("/plugins/remove", { id: pluginId }),
+        "Removing plugin...",
+      );
       if (!response.ok) {
-        setStatus(response.message ?? "Failed to remove plugin.");
+        const message = response.message ?? "Failed to remove plugin.";
+        setStatus(message);
+        await logActivity("remove", "error", message, { pluginId });
         return;
       }
-      setStatus("Plugin removed. Refresh to unload it.");
+      const message = "Plugin removed. Refresh to unload it.";
+      setStatus(message);
+      await logActivity("remove", "success", message, { pluginId });
     } catch {
-      setStatus("Runner is not reachable.");
+      const message = "Runner is not reachable.";
+      setStatus(message);
+      await logActivity("remove", "error", message, { pluginId });
     } finally {
       setBusyId(null);
     }
@@ -180,65 +250,39 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
             Plugin Runner
           </h2>
           <p className="text-sm text-subtle">
-            Instala plugins desde imágenes Docker y el runner asigna un puerto
-            libre automáticamente.
+            Add a plugin by Docker image. Metadata is discovered from the plugin manifest.
           </p>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <FormField label="Plugin ID">
+        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+          <FormField label="Docker image">
             <Input
-              className="h-9"
-              value={form.id}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, id: event.target.value }))
-              }
-              placeholder="redis"
+              className="h-10"
+              value={image}
+              onChange={(event) => setImage(event.target.value)}
+              placeholder="ghcr.io/openforgelabs/rainbow-plugin-redis:latest"
             />
           </FormField>
-          <FormField label="Name">
-            <Input
-              className="h-9"
-              value={form.name}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, name: event.target.value }))
-              }
-              placeholder="Redis Plugin"
-            />
-          </FormField>
-          <FormField label="Image">
-            <Input
-              className="h-9"
-              value={form.image}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, image: event.target.value }))
-              }
-              placeholder="ghcr.io/your-org/rainbow-plugin-redis:latest"
-            />
-          </FormField>
+          <div className="flex items-end">
+            <Button
+              variant="solid"
+              tone="primary"
+              onClick={() => handleInstall({ image })}
+              disabled={!image.trim() || isInstalling}
+            >
+              {isInstalling ? (
+                <span className="inline-flex items-center gap-2">
+                  <InlineSpinner className="h-4 w-4" />
+                  Installing
+                </span>
+              ) : (
+                "Install from image"
+              )}
+            </Button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="solid" tone="primary"
-            onClick={() =>
-              handleInstall({
-                id: form.id,
-                name: form.name || form.id,
-                image: form.image,
-              })
-            }
-            disabled={!form.id || !form.image || isInstalling}
-          >
-            {isInstalling ? (
-              <span className="inline-flex items-center gap-2">
-                <InlineSpinner className="h-4 w-4" />
-                Installing
-              </span>
-            ) : (
-              "Install from image"
-            )}
-          </Button>
           <Button variant="outline" tone="neutral" onClick={() => window.location.reload()}>
             Refresh registry
           </Button>
@@ -285,8 +329,8 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
                     className="mt-4"
                     variant={installedIds.has(item.id) ? "outline" : "solid"}
                     tone={installedIds.has(item.id) ? "neutral" : "primary"}
-                    onClick={() => handleInstall(item)}
-                    disabled={busyId === item.id}
+                    onClick={() => handleInstall({ image: item.image })}
+                    disabled={busyId === item.image}
                   >
                     {installedIds.has(item.id) ? "Reinstall" : "Install"}
                   </Button>
@@ -314,28 +358,32 @@ export function PluginRunnerPanel({ plugins }: PluginRunnerPanelProps) {
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button
-                    variant="solid" tone="accent"
+                    variant="solid"
+                    tone="accent"
                     onClick={() => handleStart(plugin)}
                     disabled={busyId === plugin.id}
                   >
                     Start
                   </Button>
                   <Button
-                    variant="solid" tone="primary"
+                    variant="solid"
+                    tone="primary"
                     onClick={() => handleUpdate(plugin)}
                     disabled={busyId === plugin.id}
                   >
                     Update
                   </Button>
                   <Button
-                    variant="outline" tone="neutral"
+                    variant="outline"
+                    tone="neutral"
                     onClick={() => handleStop(plugin.id)}
                     disabled={busyId === plugin.id}
                   >
                     Stop
                   </Button>
                   <Button
-                    variant="ghost" tone="neutral"
+                    variant="ghost"
+                    tone="neutral"
                     onClick={() => handleRemove(plugin.id)}
                     disabled={busyId === plugin.id}
                   >

@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const appRoot = dirname(fileURLToPath(import.meta.url));
-const registryPath = resolve(appRoot, "../../../../../../plugin-registry.json");
+import {
+  loadLocalPluginRegistry,
+  saveLocalPluginRegistry,
+} from "@/lib/pluginRegistry";
+import { appendActivityEvent } from "@/lib/activityLog";
 
 type UpdatePayload = {
   pluginId: string;
@@ -21,9 +20,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const raw = await readFile(registryPath, "utf-8");
-    const data = JSON.parse(raw) as { plugins: Array<Record<string, unknown>> };
-
+    const data = await loadLocalPluginRegistry();
     const plugins = (data.plugins ?? []).map((plugin) => {
       if (plugin.id === body.pluginId) {
         return { ...plugin, enabled: body.enabled };
@@ -31,14 +28,25 @@ export async function POST(request: NextRequest) {
       return plugin;
     });
 
-    await writeFile(
-      registryPath,
-      JSON.stringify({ ...data, plugins }, null, 2),
-      "utf-8",
-    );
+    await saveLocalPluginRegistry({ plugins });
+    await appendActivityEvent({
+      category: "plugins",
+      action: "toggle",
+      target: body.pluginId,
+      status: "success",
+      message: `Plugin ${body.enabled ? "enabled" : "disabled"}.`,
+      metadata: { pluginId: body.pluginId, enabled: body.enabled },
+    });
 
     return NextResponse.json({ isSuccess: true, message: "Updated", reasons: [] });
   } catch (error) {
+    await appendActivityEvent({
+      category: "plugins",
+      action: "toggle",
+      status: "error",
+      message: "Failed to update plugin registry.",
+      metadata: { reason: error instanceof Error ? error.message : "Unknown error" },
+    });
     return NextResponse.json(
       {
         isSuccess: false,

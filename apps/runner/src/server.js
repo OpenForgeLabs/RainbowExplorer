@@ -16,6 +16,9 @@ const DEFAULT_INTERNAL_PORT = Number(process.env.RUNNER_DEFAULT_INTERNAL_PORT ??
 const SHARED_DATA_DIR =
   process.env.RAINBOW_SHARED_DIR ?? path.join(os.homedir(), ".rainbow");
 
+const PLUGIN_PUBLIC_PROTOCOL = process.env.RUNNER_PLUGIN_PUBLIC_PROTOCOL ?? "http";
+const PLUGIN_PUBLIC_HOST = process.env.RUNNER_PLUGIN_PUBLIC_HOST ?? "localhost";
+
 const getRegistryPath = () => {
   const override = process.env.RAINBOW_REGISTRY_PATH;
   if (override) {
@@ -78,11 +81,16 @@ const findAvailablePort = async () => {
   throw new Error("No available ports found in runner range.");
 };
 
-const runDocker = async (args) => {
-  const { stdout } = await execFileAsync("docker", args, {
+const runDockerRaw = async (args) => {
+  const { stdout, stderr } = await execFileAsync("docker", args, {
     env: process.env,
   });
-  return stdout.trim();
+  return { stdout: stdout.trim(), stderr: stderr.trim() };
+};
+
+const runDocker = async (args) => {
+  const { stdout } = await runDockerRaw(args);
+  return stdout;
 };
 
 const containerName = (pluginId) => `rainbow-plugin-${pluginId}`;
@@ -98,28 +106,146 @@ const ensureContainerRemoved = async (name) => {
   }
 };
 
-const startPlugin = async (payload) => {
-  const { id } = payload;
+const slugify = (value) =>
+  String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+const inferPluginIdFromImage = (image) => {
+  const withoutDigest = String(image).split("@")[0];
+  const withoutTag = withoutDigest.split(":")[0];
+  const repo = withoutTag.split("/").pop() ?? "";
+  const stripped = repo
+    .replace(/^rainbow-plugin-/, "")
+    .replace(/^plugin-/, "")
+    .replace(/^rainbow-/, "");
+  const id = slugify(stripped || repo);
   if (!id) {
-    throw new Error("id is required.");
+    throw new Error("Unable to infer plugin id from image. Use a slug-like image name.");
+  }
+  return id;
+};
+
+const resolvePluginBaseUrl = (hostPort) =>
+  `${PLUGIN_PUBLIC_PROTOCOL}://${PLUGIN_PUBLIC_HOST}:${hostPort}`;
+
+const inspectContainer = async (name) => {
+  try {
+    const raw = await runDocker(["inspect", name]);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.length) {
+      return null;
+    }
+    return parsed[0];
+  } catch {
+    return null;
+  }
+};
+
+const getContainerIp = async (name) => {
+  const inspected = await inspectContainer(name);
+  if (!inspected?.NetworkSettings?.Networks) {
+    return null;
+  }
+  const networks = Object.values(inspected.NetworkSettings.Networks);
+  for (const network of networks) {
+    if (network && typeof network.IPAddress === "string" && network.IPAddress) {
+      return network.IPAddress;
+    }
+  }
+  return null;
+};
+
+const getContainerStatus = async (pluginId, metadata = {}) => {
+  const cname = containerName(pluginId);
+  const inspected = await inspectContainer(cname);
+  if (!inspected) {
+    return {
+      id: pluginId,
+      containerName: cname,
+      exists: false,
+      running: false,
+      status: "not-found",
+      metadata,
+    };
   }
 
+  const state = inspected.State ?? {};
+  const health = state.Health?.Status;
+
+  return {
+    id: pluginId,
+    containerName: cname,
+    exists: true,
+    running: Boolean(state.Running),
+    status: state.Status ?? "unknown",
+    startedAt: state.StartedAt,
+    finishedAt: state.FinishedAt,
+    exitCode: state.ExitCode,
+    restartCount: inspected.RestartCount ?? 0,
+    health: typeof health === "string" ? health : undefined,
+    metadata,
+  };
+};
+
+const fetchManifest = async ({ pluginId, internalPort }) => {
+  const cname = containerName(pluginId);
+  const containerIp = await getContainerIp(cname);
+  if (!containerIp) {
+    throw new Error("Unable to resolve plugin container network IP.");
+  }
+
+  const mountPath = `/plugins/${pluginId}`;
+  const url = `http://${containerIp}:${internalPort}${mountPath}/api/plugin-manifest`;
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(
+      `Plugin manifest not found at ${url}. Ensure plugin basePath follows /plugins/${pluginId}.`,
+    );
+  }
+
+  const manifest = await response.json();
+  if (!manifest || typeof manifest !== "object") {
+    throw new Error("Invalid plugin manifest response.");
+  }
+
+  if (manifest.id !== pluginId) {
+    throw new Error(
+      `Manifest id '${manifest.id}' does not match inferred id '${pluginId}'. Align image naming and manifest id.`,
+    );
+  }
+
+  if (typeof manifest.name !== "string" || !manifest.name.trim()) {
+    throw new Error("Manifest name is required.");
+  }
+
+  return manifest;
+};
+
+const startPlugin = async (payload) => {
   const registry = await loadRegistry();
   const plugins = Array.isArray(registry.plugins) ? registry.plugins : [];
-  const existing = plugins.find((item) => item.id === id);
 
-  const image = payload.image ?? existing?.image;
+  const inputId = payload.id ? slugify(payload.id) : undefined;
+  const inputImage = typeof payload.image === "string" ? payload.image : undefined;
+
+  const existing = inputId ? plugins.find((item) => item.id === inputId) : null;
+  const image = inputImage ?? existing?.image;
   if (!image) {
     throw new Error("image is required.");
   }
-  const name = payload.name ?? existing?.name ?? id;
-  const internalPort =
-    Number(payload.internalPort ?? existing?.internalPort ?? DEFAULT_INTERNAL_PORT);
+
+  const pluginId = inputId ?? inferPluginIdFromImage(image);
+  const internalPort = Number(payload.internalPort ?? existing?.internalPort ?? DEFAULT_INTERNAL_PORT);
 
   const hostPort = await findAvailablePort();
-  const cname = containerName(id);
+  const cname = containerName(pluginId);
+
   await ensureContainerRemoved(cname);
   await ensureDir(path.join(SHARED_DATA_DIR, "plugin-registry.json"));
+
   await runDocker([
     "run",
     "-d",
@@ -138,30 +264,44 @@ const startPlugin = async (payload) => {
     image,
   ]);
 
-  const idx = plugins.findIndex((item) => item.id === id);
-  const entry = {
-    id,
-    name,
-    image,
-    internalPort,
-    hostPort,
-    baseUrl: `http://localhost:${hostPort}`,
-    enabled: true,
-  };
-  if (idx >= 0) {
-    plugins[idx] = { ...plugins[idx], ...entry };
-  } else {
-    plugins.push(entry);
+  try {
+    const manifest = await fetchManifest({ pluginId, internalPort });
+    const mountPath = manifest.mountPath ?? `/plugins/${pluginId}`;
+    const defaultPath = manifest.views?.[0]?.route ?? "/";
+
+    const idx = plugins.findIndex((item) => item.id === pluginId);
+    const entry = {
+      id: manifest.id,
+      name: manifest.name,
+      description: manifest.description,
+      image,
+      internalPort,
+      hostPort,
+      mountPath,
+      defaultPath,
+      baseUrl: resolvePluginBaseUrl(hostPort),
+      enabled: true,
+    };
+
+    if (idx >= 0) {
+      plugins[idx] = { ...plugins[idx], ...entry };
+    } else {
+      plugins.push(entry);
+    }
+
+    registry.plugins = plugins;
+    await saveRegistry(registry);
+    return entry;
+  } catch (error) {
+    await ensureContainerRemoved(cname);
+    throw error;
   }
-  registry.plugins = plugins;
-  await saveRegistry(registry);
-  return entry;
 };
 
 const stopPlugin = async (pluginId) => {
   const cname = containerName(pluginId);
   await runDocker(["stop", cname]);
-  return { id: pluginId, status: "stopped" };
+  return getContainerStatus(pluginId);
 };
 
 const removePlugin = async (pluginId) => {
@@ -179,7 +319,57 @@ const installPlugin = async (payload) => {
     throw new Error("image is required.");
   }
   await runDocker(["pull", image]);
-  return startPlugin(payload);
+  return startPlugin({ image });
+};
+
+const getPluginStatus = async (query) => {
+  const registry = await loadRegistry();
+  const pluginMap = new Map((registry.plugins ?? []).map((item) => [item.id, item]));
+
+  const explicitId = query.get("id");
+  const explicitIds = (query.get("ids") ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const ids = explicitId
+    ? [explicitId]
+    : explicitIds.length
+      ? explicitIds
+      : Array.from(pluginMap.keys());
+
+  const items = await Promise.all(
+    ids.map(async (id) => getContainerStatus(id, pluginMap.get(id) ?? undefined)),
+  );
+
+  return { items };
+};
+
+const getPluginLogs = async (pluginId, tail = 200) => {
+  if (!pluginId) {
+    throw new Error("id is required.");
+  }
+  const cname = containerName(pluginId);
+  const exists = await containerExists(cname);
+  if (!exists) {
+    return { id: pluginId, lines: [], message: "Container not found." };
+  }
+
+  const { stdout, stderr } = await runDockerRaw([
+    "logs",
+    "--timestamps",
+    "--tail",
+    String(tail),
+    cname,
+  ]);
+
+  const merged = [stdout, stderr].filter(Boolean).join("\n").trim();
+  const lines = merged ? merged.split("\n") : [];
+
+  return {
+    id: pluginId,
+    lines,
+  };
 };
 
 const jsonResponse = (res, status, data) => {
@@ -234,6 +424,16 @@ const handleRequest = async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/plugins/registry") {
       const data = await loadRegistry();
+      return jsonResponse(res, 200, { ok: true, data });
+    }
+    if (req.method === "GET" && url.pathname === "/plugins/status") {
+      const data = await getPluginStatus(url.searchParams);
+      return jsonResponse(res, 200, { ok: true, data });
+    }
+    if (req.method === "GET" && url.pathname === "/plugins/logs") {
+      const pluginId = url.searchParams.get("id") ?? "";
+      const tail = Number(url.searchParams.get("tail") ?? "200");
+      const data = await getPluginLogs(pluginId, Number.isFinite(tail) ? tail : 200);
       return jsonResponse(res, 200, { ok: true, data });
     }
 
