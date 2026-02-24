@@ -1,27 +1,54 @@
-name: Publish Shell Image
+name: Publish Explorer Images
 
 on:
+  push:
+    tags:
+      - "v*"
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      publish_latest:
+        description: "Also push :latest"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
 
 permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_SHELL: ghcr.io/openforgelabs/rainbowexplorer-shell
+  IMAGE_RUNNER: ghcr.io/openforgelabs/rainbowexplorer-runner
+
 jobs:
-  build:
-    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'shell-') }}
+  publish:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: shell
+            image: ghcr.io/openforgelabs/rainbowexplorer-shell
+            dockerfile: docker/Dockerfile.shell
+            use_secret: true
+          - name: runner
+            image: ghcr.io/openforgelabs/rainbowexplorer-runner
+            dockerfile: docker/Dockerfile.runner
+            use_secret: false
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Resolve image tag
-        id: meta
-        run: |
-          tag="${GITHUB_REF_NAME#shell-}"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -32,19 +59,30 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' || github.event.inputs.publish_latest == 'true' }}
+
+      - name: Build & push (${{ matrix.name }})
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.shell
+          file: ${{ matrix.dockerfile }}
           push: true
           platforms: linux/amd64,linux/arm64
-          secrets: |
-            gh_packages_token=${{ secrets.GH_PACKAGES_TOKEN }}
-          tags: |
-            ghcr.io/${{ github.repository }}-shell:latest
-            ghcr.io/${{ github.repository }}-shell:${{ steps.meta.outputs.tag }}
+          provenance: false
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          secrets: ${{ matrix.use_secret && format('gh_packages_token={0}', secrets.GH_PACKAGES_TOKEN != '' && secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN) || '' }}

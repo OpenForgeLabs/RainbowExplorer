@@ -63,6 +63,19 @@ Run shell + runner together:
 pnpm dev:all
 ```
 
+## Image release pipeline
+Shell and Runner container images are published to GHCR from this repository:
+
+- `ghcr.io/openforgelabs/rainbowexplorer-shell`
+- `ghcr.io/openforgelabs/rainbowexplorer-runner`
+
+Release triggers:
+- Push a git tag like `v0.2.0` (recommended milestone release).
+- Publish a GitHub Release.
+- Or run the workflow manually (`workflow_dispatch`), with optional `latest` tag publishing.
+
+The workflow is defined at `.github/workflows/publish-images.yml` and builds multi-arch images (`linux/amd64`, `linux/arm64`).
+
 ## Plugin registry
 By default, the shell reads local `~/.rainbow/plugin-registry.json`.
 
