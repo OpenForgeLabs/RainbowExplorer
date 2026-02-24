@@ -6,6 +6,7 @@ import {
   saveThemeRegistry,
 } from "@/lib/themeRegistry.server";
 import { themeRegistrySchema } from "@/lib/themeRegistry";
+import { appendActivityEvent } from "@/lib/activityLog";
 
 const importModeSchema = ["replace", "merge"] as const;
 
@@ -36,8 +37,23 @@ export async function PUT(request: NextRequest) {
     const body = (await request.json()) as { registry?: unknown };
     const parsed = themeRegistrySchema.parse(body.registry);
     const saved = await saveThemeRegistry(parsed);
+    await appendActivityEvent({
+      category: "themes",
+      action: "save",
+      status: "success",
+      message: "Theme registry saved.",
+      metadata: { themes: saved.themes.length },
+    });
     return NextResponse.json({ isSuccess: true, data: saved, message: "Saved", reasons: [] });
   } catch (error) {
+    await appendActivityEvent({
+      category: "themes",
+      action: "save",
+      status: "error",
+      message: "Failed to save theme registry.",
+      metadata: { reason: error instanceof Error ? error.message : "Unknown error" },
+    });
+
     return NextResponse.json(
       {
         isSuccess: false,
@@ -56,12 +72,25 @@ export async function POST(request: NextRequest) {
 
     if (body.action === "reset") {
       const reset = await resetThemeRegistry();
+      await appendActivityEvent({
+        category: "themes",
+        action: "reset",
+        status: "success",
+        message: "Theme registry reset.",
+      });
       return NextResponse.json({ isSuccess: true, data: reset, message: "Reset", reasons: [] });
     }
 
     if (body.action === "replace") {
       const parsed = themeRegistrySchema.parse(body.registry);
       const saved = await saveThemeRegistry(parsed);
+      await appendActivityEvent({
+        category: "themes",
+        action: "replace",
+        status: "success",
+        message: "Theme registry replaced.",
+        metadata: { themes: saved.themes.length },
+      });
       return NextResponse.json({ isSuccess: true, data: saved, message: "Replaced", reasons: [] });
     }
 
@@ -75,6 +104,13 @@ export async function POST(request: NextRequest) {
         );
       }
       const saved = mode === "replace" ? await saveThemeRegistry(parsed) : await mergeThemeRegistry(parsed);
+      await appendActivityEvent({
+        category: "themes",
+        action: "import",
+        status: "success",
+        message: "Theme registry imported.",
+        metadata: { mode, themes: saved.themes.length },
+      });
       return NextResponse.json({ isSuccess: true, data: saved, message: "Imported", reasons: [] });
     }
 
@@ -83,6 +119,13 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   } catch (error) {
+    await appendActivityEvent({
+      category: "themes",
+      action: "import",
+      status: "error",
+      message: "Failed to process theme registry action.",
+      metadata: { reason: error instanceof Error ? error.message : "Unknown error" },
+    });
     return NextResponse.json(
       {
         isSuccess: false,
