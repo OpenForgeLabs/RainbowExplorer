@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@openforgelabs/rainbow-contracts": "^0.1.1",
-    "@openforgelabs/rainbow-ui": "^2.0.4",
+    "@openforgelabs/rainbow-ui": "^2.0.5",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"

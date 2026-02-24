@@ -10,13 +10,13 @@ Use plugin images published to GHCR.
 Example (Redis plugin):
 
 ```bash
-docker pull ghcr.io/openforgelabs/rainbow-redis:latest
+docker pull ghcr.io/openforgelabs/rainbow-plugin-redis:latest
 ```
 
 Versioned tags are created from releases, for example:
 
 ```bash
-docker pull ghcr.io/openforgelabs/rainbow-redis:v0.1.1
+docker pull ghcr.io/openforgelabs/rainbow-plugin-redis:v0.1.1
 ```
 
 ### 2) Your own organization registry
@@ -24,12 +24,24 @@ You can also use Docker Hub, ECR, ACR, GCR, or private GHCR images.
 
 ## Installing a plugin image in the shell
 
-Open `Shell -> Plugin Runner` and fill:
-- `Plugin ID`: stable id (e.g. `redis`)
-- `Name`: display name
-- `Image`: full image reference (e.g. `ghcr.io/openforgelabs/rainbow-redis:latest`)
+Open `Shell -> Plugins` and provide only:
+- `Image`: full image reference (e.g. `ghcr.io/openforgelabs/rainbow-plugin-redis:latest`)
 
 Then click **Install from image**.
+
+The runner will:
+1. infer plugin id from image name,
+2. start container,
+3. read plugin manifest from `/plugins/<pluginId>/api/plugin-manifest`,
+4. persist plugin metadata in `~/.rainbow/plugin-registry.json`.
+
+## Naming/manifest convention
+
+To work with auto-installation, keep these aligned:
+- image repo name -> plugin slug (`rainbow-plugin-redis` -> `redis`)
+- Next.js `basePath` -> `/plugins/<pluginId>`
+- manifest endpoint -> `/plugins/<pluginId>/api/plugin-manifest`
+- `manifest.id` -> `<pluginId>`
 
 ## Optional plugin catalog
 
@@ -47,7 +59,7 @@ Expected shape:
     {
       "id": "redis",
       "name": "Redis",
-      "image": "ghcr.io/openforgelabs/rainbow-redis:latest",
+      "image": "ghcr.io/openforgelabs/rainbow-plugin-redis:latest",
       "description": "Redis explorer plugin",
       "tags": ["database", "redis"]
     }
@@ -63,6 +75,9 @@ Expected shape:
 
 ### "No image recorded for this plugin"
 - Reinstall that plugin from image once.
+
+### "Manifest id does not match inferred id"
+- Align image naming, basePath, and `manifest.id` under the same `<pluginId>`.
 
 ### Private image pulls fail
 - Authenticate Docker on the runner host:

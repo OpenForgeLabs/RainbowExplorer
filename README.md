@@ -31,12 +31,20 @@ RainbowExplorer is designed as a:
 ## Repository map
 - `apps/shell`: main host application.
 - `apps/runner`: local plugin runner.
-- `plugin-registry.json`: local plugin discovery source.
+- `~/.rainbow/plugin-registry.json`: installed plugin registry (local workspace).
+- `~/.rainbow/connections.json`: connection store.
+- `~/.rainbow/theme-registry.json`: theme registry.
+- `~/.rainbow/activity-log.json`: activity log.
 
 Related repositories:
 - [`OpenForgeLabs/RainbowPackages`](https://github.com/OpenForgeLabs/RainbowPackages): shared UI, contracts, and connections packages.
 - [`OpenForgeLabs/RainbowRedis`](https://github.com/OpenForgeLabs/RainbowRedis): Redis plugin implementation.
 
+## Product flow
+- **Connections** is the primary operational view.
+- **Plugins** is management only (install/enable/runner actions + manifest metadata).
+- **Activity** and **Settings** are fixed management areas.
+- Theme editor lives at `/settings/themes`.
 
 ## Guides
 - [Plugin image sources and installation](./docs/PLUGIN_IMAGES.md)
@@ -56,7 +64,7 @@ pnpm dev:all
 ```
 
 ## Plugin registry
-By default, the shell reads local `plugin-registry.json`.
+By default, the shell reads local `~/.rainbow/plugin-registry.json`.
 
 You can override with a remote registry:
 

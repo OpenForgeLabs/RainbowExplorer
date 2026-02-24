@@ -14,11 +14,12 @@ The shell reads local registry first and falls back to built-ins when needed.
 
 ## How to create a new theme
 
-1. Open the **Themes** page in the shell.
-2. Click **Create theme**.
-3. Edit metadata (`id`, `label`, `description`, `basedOn`).
-4. Edit token values visually (or switch to JSON mode).
-5. Save.
+1. Open **Settings** in shell.
+2. Navigate to **Themes** (`/settings/themes`).
+3. Click **Create theme**.
+4. Edit metadata (`id`, `label`, `description`, `basedOn`).
+5. Edit token values visually (or switch to JSON mode).
+6. Save.
 
 ## Import and export
 
