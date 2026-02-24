@@ -1,6 +1,6 @@
-# @rainbow/runner
+# @rainbow/shell
 
-## 1.0.3
+## 1.0.2
 
 ### Patch Changes
 
@@ -10,10 +10,3 @@
 
   Also simplify the image release workflow to a single changesets-driven job without matrix while
   preserving independent shell/runner publish gating by version changes.
-
-## 1.0.2
-
-### Patch Changes
-
-- c20b000: Add async install jobs with status endpoint support and improve Docker runtime compatibility when runner is containerized.
-  Includes support for shared Docker volume mounts (`RUNNER_SHARED_DOCKER_VOLUME`) and startup runtime checks.
