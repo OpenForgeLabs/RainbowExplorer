@@ -73,6 +73,12 @@ jobs:
             type=sha
             type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' || github.event.inputs.publish_latest == 'true' }}
 
+      - name: Smoke test runner image (docker-cli availability)
+        if: matrix.name == 'runner'
+        run: |
+          docker build -f docker/Dockerfile.runner -t rainbow-runner-smoke:${{ github.sha }} .
+          docker run --rm rainbow-runner-smoke:${{ github.sha }} docker --version
+
       - name: Build & push (${{ matrix.name }})
         uses: docker/build-push-action@v6
         with:

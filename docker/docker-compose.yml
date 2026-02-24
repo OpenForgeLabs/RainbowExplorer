@@ -20,7 +20,6 @@ services:
       - RUNNER_PORT_START=4100
       - RUNNER_PORT_END=4999
       - RAINBOW_SHARED_DIR=/root/.rainbow
-      # Browser-facing URL for plugin views exposed by runner.
       - RUNNER_PLUGIN_PUBLIC_PROTOCOL=http
       - RUNNER_PLUGIN_PUBLIC_HOST=localhost
     volumes:
@@ -32,12 +31,6 @@ services:
       timeout: 5s
       retries: 6
       start_period: 5s
-
-  plugin-redis:
-    image: ghcr.io/openforgelabs/rainbow-redis:latest
-    profiles: ["plugins"]
-    ports:
-      - "4011:4011"
 
 volumes:
   rainbow-data:
