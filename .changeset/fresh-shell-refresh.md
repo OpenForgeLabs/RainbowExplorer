@@ -1,4 +1,6 @@
+---
 "@rainbow/shell": patch
+---
 
 Improve hosted plugin UX and refresh behavior in shell.
 
