@@ -59,8 +59,8 @@ export function Sidebar({ collapsed = false, onToggleCollapse }: SidebarProps) {
           collapsed ? "justify-center px-0 py-5" : "gap-3 px-4 py-4"
         }`}
       >
-        <div className="flex h-12 w-12 items-center justify-center rounded-[var(--rx-radius-md)] bg-primary/15 text-primary">
-          <span className="material-symbols-outlined text-[24px]">rainy</span>
+        <div className="flex h-10 w-10 items-center justify-center rounded-[var(--rx-radius-md)] bg-primary/15 text-primary">
+          <span className="material-symbols-outlined text-[24px]">Looks</span>
         </div>
         <div className={collapsed ? "hidden min-w-0 flex-1" : "min-w-0 flex-1 leading-tight"}>
           <div className="flex items-center gap-2">
