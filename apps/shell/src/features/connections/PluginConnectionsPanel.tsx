@@ -83,6 +83,31 @@ export function PluginConnectionsPanel() {
   const [selectedConnectionKey, setSelectedConnectionKey] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const fetchConnections = useCallback(async (sourcePlugins: PluginWithManifest[]) => {
+    if (!sourcePlugins.length) {
+      setPlugins([]);
+      return;
+    }
+    const updates = await Promise.all(
+      sourcePlugins.map(async (plugin) => {
+        try {
+          const response = await fetch(
+            resolveConnectionEndpoint(plugin.registry.id),
+            { cache: "no-store" },
+          );
+          const data = await response.json();
+          return {
+            ...plugin,
+            connections: data?.data ?? [],
+          };
+        } catch {
+          return { ...plugin, connections: [] };
+        }
+      }),
+    );
+    setPlugins(updates);
+  }, []);
+
   const loadPlugins = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -111,13 +136,13 @@ export function PluginConnectionsPanel() {
         );
       }, "Loading plugin manifests...");
 
-      setPlugins(manifests);
+      await fetchConnections(manifests);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load plugins.");
     } finally {
       setIsLoading(false);
     }
-  }, [withLoader]);
+  }, [fetchConnections, withLoader]);
 
   useEffect(() => {
     void loadPlugins();
@@ -162,32 +187,6 @@ export function PluginConnectionsPanel() {
     });
   }, [connections, filter, query]);
 
-  const fetchConnections = useCallback(async () => {
-    const updates = await Promise.all(
-      plugins.map(async (plugin) => {
-        try {
-          const response = await fetch(
-            resolveConnectionEndpoint(plugin.registry.id),
-            { cache: "no-store" },
-          );
-          const data = await response.json();
-          return {
-            ...plugin,
-            connections: data?.data ?? [],
-          };
-        } catch {
-          return { ...plugin, connections: [] };
-        }
-      }),
-    );
-    setPlugins(updates);
-  }, [plugins]);
-
-  useEffect(() => {
-    if (!plugins.length) return;
-    fetchConnections();
-  }, [plugins.length]);
-
   const handleExport = async () => {
     const response = await withLoader(
       async () => fetch("/api/connections/export", { cache: "no-store" }),
@@ -217,7 +216,7 @@ export function PluginConnectionsPanel() {
         }),
       "Importing connections...",
     );
-    await fetchConnections();
+    await fetchConnections(plugins);
   };
 
   const technologyCount = plugins.length;
@@ -387,7 +386,7 @@ export function PluginConnectionsPanel() {
             setEditValues(null);
           }}
           onSaved={async () => {
-            await fetchConnections();
+            await fetchConnections(plugins);
             setEditValues(null);
           }}
           initialValues={editValues ?? undefined}

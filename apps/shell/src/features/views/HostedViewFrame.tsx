@@ -29,6 +29,7 @@ export function HostedViewFrame({ srcBase, title }: HostedViewFrameProps) {
   const { theme, createThemeMessage } = useTheme();
   const { setExternalLoader } = useGlobalLoader();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const themeRetryTimeoutsRef = useRef<number[]>([]);
 
   const frameOrigin = useMemo(() => new URL(srcBase).origin, [srcBase]);
   const loaderKey = useMemo(() => `plugin-loader:${frameOrigin}`, [frameOrigin]);
@@ -39,6 +40,13 @@ export function HostedViewFrame({ srcBase, title }: HostedViewFrameProps) {
     return url.toString();
   }, [srcBase, theme]);
 
+  const clearThemeRetryTimeouts = () => {
+    for (const id of themeRetryTimeoutsRef.current) {
+      window.clearTimeout(id);
+    }
+    themeRetryTimeoutsRef.current = [];
+  };
+
   const postThemeToFrame = () => {
     const frame = frameRef.current;
     if (!frame?.contentWindow) {
@@ -47,8 +55,24 @@ export function HostedViewFrame({ srcBase, title }: HostedViewFrameProps) {
     frame.contentWindow.postMessage(createThemeMessage(theme), "*");
   };
 
-  useEffect(() => {
+  const postThemeToFrameWithRetry = () => {
     postThemeToFrame();
+    clearThemeRetryTimeouts();
+
+    const retryDelays = [120, 350, 800];
+    for (const delay of retryDelays) {
+      const timeoutId = window.setTimeout(() => {
+        postThemeToFrame();
+      }, delay);
+      themeRetryTimeoutsRef.current.push(timeoutId);
+    }
+  };
+
+  useEffect(() => {
+    postThemeToFrameWithRetry();
+    return () => {
+      clearThemeRetryTimeouts();
+    };
   }, [theme, srcBase, createThemeMessage, frameOrigin]);
 
   useEffect(() => {
@@ -75,7 +99,7 @@ export function HostedViewFrame({ srcBase, title }: HostedViewFrameProps) {
       title={title}
       src={src}
       className="h-full w-full border-0"
-      onLoad={postThemeToFrame}
+      onLoad={postThemeToFrameWithRetry}
     />
   );
 }

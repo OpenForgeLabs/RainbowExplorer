@@ -304,10 +304,21 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
         const remaining = persisted.filter((entry) => entry.status !== "succeeded");
         await savePendingInstallsToStore(remaining);
         setPendingInstalls(remaining);
-        window.location.reload();
+        try {
+          await withLoader(
+            async () => {
+              await refreshRegistryItems();
+              await loadStatus(true);
+            },
+            "Refreshing plugins...",
+          );
+          setStatusMessage("Plugin installed and loaded.");
+        } catch {
+          window.location.reload();
+        }
       })();
     }, INSTALL_SUCCESS_ANIMATION_MS);
-  }, [pendingInstalls, pendingReady]);
+  }, [pendingInstalls, pendingReady, withLoader, loadStatus]);
 
   useEffect(() => {
     if (!pendingReady) {
@@ -446,6 +457,21 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
     );
     setItems(nextItems);
     return true;
+  };
+
+  const handleRefresh = async () => {
+    try {
+      await withLoader(
+        async () => {
+          await refreshRegistryItems();
+          await loadStatus(true);
+        },
+        "Refreshing plugins...",
+      );
+      setStatusMessage("Plugins refreshed.");
+    } catch {
+      setStatusMessage("Failed to refresh plugins.");
+    }
   };
 
   const pollInstallJob = async (jobId: string) => {
@@ -655,7 +681,7 @@ export function PluginRegistryWorkspace({ initialItems }: PluginRegistryWorkspac
               aria-label="Filter plugins"
               className="h-9"
             />
-            <Button variant="outline" tone="neutral" onClick={() => void loadStatus(true)}>
+            <Button variant="outline" tone="neutral" onClick={() => void handleRefresh()}>
               <span className="material-symbols-outlined text-[18px]">refresh</span>
             </Button>
           </div>
