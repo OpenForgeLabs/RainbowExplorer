@@ -166,6 +166,19 @@ jobs:
           secrets: |
             gh_packages_token=${{ secrets.GH_PACKAGES_TOKEN != '' && secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
+      - name: Create git tag (shell)
+        if: steps.scope.outputs.publish_shell == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="shell-v${{ steps.detect.outputs.shell_version }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists. Skipping."
+            exit 0
+          fi
+          git tag -a "$tag" -m "Release shell ${{ steps.detect.outputs.shell_version }}"
+          git push origin "$tag"
+
       - name: Smoke test runner image (docker-cli availability)
         if: steps.scope.outputs.publish_runner == 'true'
         run: |
@@ -196,3 +209,16 @@ jobs:
           tags: ${{ steps.meta_runner.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Create git tag (runner)
+        if: steps.scope.outputs.publish_runner == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="runner-v${{ steps.detect.outputs.runner_version }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists. Skipping."
+            exit 0
+          fi
+          git tag -a "$tag" -m "Release runner ${{ steps.detect.outputs.runner_version }}"
+          git push origin "$tag"

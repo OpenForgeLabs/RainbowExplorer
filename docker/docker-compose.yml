@@ -29,6 +29,8 @@ services:
       - RUNNER_PLUGIN_DOCKER_NETWORK=rainbow-net
       - RUNNER_PLUGIN_PUBLIC_PROTOCOL=http
       - RUNNER_PLUGIN_PUBLIC_HOST=localhost
+      - RUNNER_MANIFEST_TIMEOUT_MS=120000
+      - RUNNER_MANIFEST_RETRY_MS=2000
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - rainbow-data:/root/.rainbow
@@ -43,6 +45,7 @@ services:
 
 volumes:
   rainbow-data:
+    name: rainbow-data
 
 networks:
   rainbow-net:
