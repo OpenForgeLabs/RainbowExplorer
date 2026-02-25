@@ -179,6 +179,22 @@ jobs:
           git tag -a "$tag" -m "Release shell ${{ steps.detect.outputs.shell_version }}"
           git push origin "$tag"
 
+      - name: Create GitHub Release (shell)
+        if: steps.scope.outputs.publish_shell == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="shell-v${{ steps.detect.outputs.shell_version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "GitHub release $tag already exists. Skipping."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --title "RainbowExplorer Shell ${{ steps.detect.outputs.shell_version }}" \
+            --generate-notes
+
       - name: Smoke test runner image (docker-cli availability)
         if: steps.scope.outputs.publish_runner == 'true'
         run: |
@@ -222,3 +238,19 @@ jobs:
           fi
           git tag -a "$tag" -m "Release runner ${{ steps.detect.outputs.runner_version }}"
           git push origin "$tag"
+
+      - name: Create GitHub Release (runner)
+        if: steps.scope.outputs.publish_runner == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="runner-v${{ steps.detect.outputs.runner_version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "GitHub release $tag already exists. Skipping."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --title "RainbowExplorer Runner ${{ steps.detect.outputs.runner_version }}" \
+            --generate-notes
